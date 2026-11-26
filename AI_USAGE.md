@@ -454,3 +454,71 @@ Also fix the stale v1 wording, and tell me the EVM window maximum.
 
 - Nothing outstanding from this task. 49 forge + 27 vitest passing, typecheck
   clean. The four screens and the keeper are still unbuilt.
+
+---
+
+## 2026-11-26 — Task 8: signature inside the envelope, keeper, Vote screen
+
+**What I asked**
+
+Seal the ML-DSA-87 signature inside the envelope, binding the choice, a random
+nonce, the voter's address, electionId, contract and chain id under a fixed
+domain tag — not the envelope hash. Verify at tally against the registry key
+for ballotVoter. Add the voter-B-replays-voter-A test and a different-election
+test. Keep the ML-DSA public key out of the envelope. Measure the new size and
+gas and confirm the funding. Switch 09-trustee to tallyBallots, build Vote,
+rerun, push. Also: keeper on Actions with Pages, addVoters, 30 invites.
+
+**What the AI generated**
+
+- The v2 ballot format, exactly as specified. The signed message binds the
+  voter's own address, which is what defeats the replay; the identity comes
+  from the registry and the signature from the ballot, never both from the
+  ballot.
+- Measured rather than guessed: envelope 6,389 bytes (was 1,747 — the
+  4,627-byte signature dominates), calldata 6,500, gas 277,220 where the
+  EIP-7623 floor is *exactly* the binding constraint. 0.0419 QOR a ballot plus
+  0.045 a window; it raised invite funding to 0.35 for a 4x margin.
+- 40 vitest tests including both replays I asked for, plus wrong-key and
+  wrong-message variants it added itself.
+- `addVoters` with 9 tests, redeployed, and a full election rerun so the live
+  contract carries the whole proof.
+- 30 invites provisioned, demo election open to 20 Dec, keeper on a 4-hourly
+  Actions cron publishing to Pages with no commit — `contents: read` means it
+  cannot commit even by accident.
+- Vote screen, and it *tested* the path against the real chain rather than
+  assuming the build passing meant it worked: demo voter #0 cast a real sealed
+  ballot, inclusion verified.
+
+**Three problems it surfaced rather than worked around**
+
+- `fetchPqcStatus` returns HTTP 400 for a `0x` address and needs `qor1`, while
+  `fetchKemKey` takes either. Ballots carry `0x`, so the first v2 tally died in
+  all three trustee processes with a message that reads like a missing key.
+- It had written broken placeholder code into the Vote submit handler and said
+  so, rather than leaving it: the page needs the demo identity's ML-DSA-87
+  secret key, which pool.json did not carry, because that key derives from a
+  mnemonic and not from the secp256k1 key.
+- `vite.config.mjs` setting `root: 'web'` silently made vitest find zero tests.
+
+**What I changed or decided myself**
+
+- Approved publishing the demo keys, and vetoed committing pool.json — a keeper
+  committing every 4 hours would have polluted history past the deadline, which
+  judges check. Pages artifact deploys leave history frozen.
+
+**Decided by the AI, flagged for my review**
+
+- Booth-era scripts moved to `legacy/scripts/` with a README; they use the old
+  ballot API and are kept only because they produced cited PROOF.md rows.
+- `pool.json` carries both keys per invite, ~84 KB. The master never appears.
+- Results points at election 3, not 1: both had the three-process tally, but
+  only 3 has signed ballots.
+
+**Could not verify**
+
+- The Q-Day screen is still a placeholder — agreed to come last.
+- The Pages site has not been published yet: that needs the two Actions
+  secrets and Settings > Pages > Source: GitHub Actions, both mine to do.
+- Vote was exercised through its exact code path in node against the live
+  chain, not yet clicked in a real browser.

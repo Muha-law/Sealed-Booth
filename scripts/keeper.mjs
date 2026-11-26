@@ -25,6 +25,7 @@ import { evmWindowStatus, evmWindowCost } from '@qorechain/evm/window';
 import { qorechainTestnet } from '@qorechain/evm';
 import { fetchPqcStatus, msg } from '@qorechain/sdk';
 import { buildRegisterPqKeyMessage } from '@qorechain/qoresign';
+import { decodeEventLog } from 'viem';
 import { loadEnv, NETWORK, formatQor } from './lib/env.mjs';
 import { inviteAccount, INVITE_MAX } from './lib/accounts.mjs';
 import { walletClient, maxFeePerGas } from './lib/evm.mjs';
@@ -265,9 +266,13 @@ for (const { index, acct } of pool) {
   entries.push({
     index,
     address: acct.evm,
-    // Published deliberately. Single-use: the contract allows one ballot per
-    // address, and the account holds only a few cents of testnet QOR.
+    // Both keys are published deliberately. The page needs the secp256k1 key
+    // to send the transaction and the ML-DSA-87 key to sign the ballot, and a
+    // browser cannot derive either without a secret. Single-use: the contract
+    // allows one ballot per address, and the account holds a few cents of
+    // worthless testnet QOR. The MASTER mnemonic never appears here.
     privateKey: DRY_RUN ? '0xdry-run' : toHex(acct.classicalKey.privateKey),
+    mldsaSecretKey: DRY_RUN ? '0xdry-run' : toHex(acct.pqKey.secretKey),
     expiryHeight: String(status.expiryHeight ?? 0n),
     remainingTxs: String(status.remainingTxs ?? 0n),
     live: Boolean(status.live),
@@ -282,6 +287,31 @@ console.log(`  opened ${opened} window(s), topped up ${toppedUp} balance(s)`);
 
 // ------------------------------------------------------- publish pool.json
 
+// The election's ML-KEM-1024 + X25519 key blob, from the creation event. The
+// page seals to this, and cannot run a log query itself without the 10,000
+// block range limit biting as the election ages.
+let electionPublicKey = '0x';
+{
+  const from = head > 9_000n ? head - 9_000n : 0n;
+  const logs = await client.getLogs({ address: CONTRACT, fromBlock: from, toBlock: 'latest' });
+  for (const l of logs) {
+    try {
+      const parsed = decodeEventLog({ abi: ELECTION_ABI, data: l.data, topics: l.topics });
+      const a = parsed.args;
+      if (parsed.eventName === 'ElectionCreated' && a.electionId === ELECTION_ID) {
+        electionPublicKey = a.electionPublicKey;
+      }
+    } catch {
+      /* not one of ours */
+    }
+  }
+}
+if (electionPublicKey === '0x') {
+  console.error('keeper: could not read the election key from the creation event.');
+  console.error('  The ElectionCreated event may have aged past the 10,000-block log window.');
+  process.exit(1);
+}
+
 const payload = {
   note: 'Demo identities. These private keys are PUBLIC BY DESIGN: each is good for one ballot in this election only and holds a few cents of worthless testnet QOR.',
   chainId: NETWORK.evmChainId,
@@ -289,6 +319,8 @@ const payload = {
   explorer: NETWORK.explorer,
   contract: CONTRACT,
   electionId: String(ELECTION_ID),
+  electionPublicKey,
+  question: election.question,
   closeAt: String(election.closeAt),
   generatedAtBlock: String(head),
   poolTarget: POOL_TARGET,

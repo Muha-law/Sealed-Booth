@@ -84,6 +84,7 @@ receipts have no such floor and are real execution gas. Both are measured in
 | 67 | trustee 1 tallied independently in its own process and submitted totals for election 3 — this was the 2th matching submission, so the result is FINAL *(evm)* | `0x5d01214e…04b5027a` | gas 163,200 | [explorer](https://explore.qore.network/tx/0x5d01214e5b9f6016df9ff0a100e84b483cc87ec91a903cdb5fb17ec104b5027a) |
 | 68 | trustee 2 tallied independently in its own process and submitted totals for election 3 — this was the 2th matching submission, so the result is FINAL *(evm)* | `0xb4c7d026…a926cdc6` | gas 199,962 | [explorer](https://explore.qore.network/tx/0xb4c7d026494541de03d46363b1117ddace510452a3abf81c30a73671a926cdc6) |
 | 69 | trustee 3 tallied independently in its own process and submitted totals for election 3 — this was the 3th matching submission, so the result is FINAL *(evm)* | `0x5a327756…6bc8f6f4` | gas 163,200 | [explorer](https://explore.qore.network/tx/0x5a327756b45f2cbca1049233bf0cb270eb255f062a117672054c29b56bc8f6f4) |
+| 70 | a ballot cast through the browser Vote path: sealed with ML-KEM-1024 and signed with ML-DSA-87 entirely client-side by src/core/ballot.ts, sent from a pre-provisioned demo identity, 6,387 bytes of ciphertext, inclusion verified against ballotHash() *(evm)* | `0x1b89e560…8b0e4ae6` | gas 257,200 | [explorer](https://explore.qore.network/tx/0x1b89e5609f7f1c9e4c2354cdcbec893f2f0c26df1073bc8084cd19a78b0e4ae6) |
 
 ## Gas: what is actually consumed
 

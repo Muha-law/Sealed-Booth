@@ -22,23 +22,38 @@ export interface Pool {
   note: string;
   contract: Hex;
   electionId: string;
+  /** ML-KEM-1024 + X25519 blob, so the page need not query the event log. */
+  electionPublicKey: Hex;
+  question: string;
   closeAt: string;
   generatedAtBlock: string;
   invites: {
     index: number;
     address: Hex;
-    /** Public by design: one ballot each, a few cents of testnet QOR. */
+    /**
+     * Both keys are public by design. The page needs the secp256k1 key to send
+     * and the ML-DSA-87 key to sign, and a browser cannot derive either without
+     * a secret. One ballot each, a few cents of testnet QOR, and the master
+     * mnemonic is never here.
+     */
     privateKey: Hex;
+    mldsaSecretKey: Hex;
     expiryHeight: string;
     remainingTxs: string;
     live: boolean;
   }[];
 }
 
-/** The finished election kept as the proof, on the contract it was run on. */
+/**
+ * The finished election shown as the proof.
+ *
+ * Election 3, not 1: both ran the three-process trustee tally, but 3 is the one
+ * whose ballots carry an ML-DSA-87 signature sealed inside the envelope and
+ * verified at tally against the registry. Election 1 predates that format.
+ */
 export const PROOF_ELECTION = {
   contract: '0xb7d52d7934c5c26a9a8fa623ce3669c5def336e2' as Hex,
-  electionId: 1n,
+  electionId: 3n,
 } as const;
 
 export const abi = ELECTION_ABI as unknown as Abi;
