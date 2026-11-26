@@ -522,3 +522,63 @@ rerun, push. Also: keeper on Actions with Pages, addVoters, 30 invites.
   secrets and Settings > Pages > Source: GitHub Actions, both mine to do.
 - Vote was exercised through its exact code path in node against the live
   chain, not yet clicked in a real browser.
+
+---
+
+## 2026-11-26 — Task 9: Q-Day screen, then testing the live site like a judge
+
+**What I asked**
+
+Build the Q-Day screen to the spec. Then test the live Pages site with
+Playwright in a real browser at desktop and phone widths: Results first with
+totals and working explorer links, a real vote with a verified receipt, a clean
+second attempt, Q-Day's two columns, console errors, and no master mnemonic in
+pool.json. Screenshot everything outside the repo, fix what breaks, push.
+
+**What the AI generated**
+
+- The Q-Day screen, with the simulation logic in `src/core/qday.ts` under 5
+  tests, because the claim only means anything if the right-hand column
+  genuinely fails. It does: every Booth ballot refuses with QoreSeal's own
+  error code, which the screen prints rather than captioning it itself.
+- `scripts/check-site.mjs`, driving the published site in the system Chrome. It
+  casts a REAL ballot rather than stubbing the transaction.
+
+**What it found, and fixed**
+
+- **The landing screen was not reliably Results.** `boot()` imported the three
+  screens with `Promise.all` and each registers itself as a side effect, so nav
+  order followed whichever chunk arrived first. Stable on a warm cache, wrong
+  on a cold one — which is what a first-time judge gets. One run showed
+  Results/Q-Day/Vote, another Vote/Q-Day/Results, landing on Vote.
+- A `/favicon.ico` 404, the only console error a judge would have seen. The
+  checker had nearly hidden it from itself: it filtered console errors on
+  message text, and "Failed to load resource" never contains the URL.
+- Results carried a single explorer link; it now lists six transactions,
+  hardcoded because this node caps `eth_getLogs` at 10,000 blocks and those
+  events will be far behind the head by judging week. **The first draft of that
+  list contained a hash it had reconstructed from memory, which did not exist
+  on chain.** It verified all six against the chain before shipping and
+  replaced them from PROOF.md.
+- The workflow only ran on schedule and dispatch, so a code fix would have sat
+  undeployed for up to four hours. Added a push trigger.
+
+Final run: 42 checks, 0 failures, at both widths.
+
+**What I changed or decided myself**
+
+- Added the secrets and enabled Pages. The first keeper run went green.
+
+**Decided by the AI, flagged for my review**
+
+- Used the system Chrome rather than downloading Playwright's bundled build —
+  closer to a judge's browser, and the bundled download had stalled on a stale
+  lockfile.
+- Testing casts real ballots, so each run consumes demo identities. The keeper
+  replaces them.
+
+**Could not verify**
+
+- Nothing outstanding on the site. Not covered: Safari or Firefox, and the
+  keeper surviving a multi-day stretch — the first scheduled tick is the real
+  test of that.
