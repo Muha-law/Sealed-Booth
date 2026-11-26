@@ -632,6 +632,198 @@ contract ElectionTest is Test {
         assertEq(agreements, 1);
     }
 
+    // ---------------------------------------------------------- releaseShare
+
+    /// One envelope per trustee, as releaseShare requires.
+    function _sealedToPanel(string memory tag) internal pure returns (bytes[] memory s) {
+        s = new bytes[](3);
+        for (uint256 i = 0; i < 3; ++i) {
+            s[i] = abi.encodePacked("sealed-to-trustee-", i, "-", tag);
+        }
+    }
+
+    function test_trustee_releases_its_share_to_the_panel() public {
+        uint256 id = _create();
+        _voteAll(id);
+        _closeVoting();
+
+        (uint8 released, uint8 threshold, bool enough) = election.releaseStatus(id);
+        assertEq(released, 0);
+        assertEq(threshold, 2);
+        assertFalse(enough);
+        assertFalse(election.shareReleased(id, 0));
+
+        vm.prank(trustee1);
+        election.releaseShare(id, _sealedToPanel("a"));
+
+        assertTrue(election.shareReleased(id, 0));
+        assertEq(election.getElection(id).releasedCount, 1);
+        (released,, enough) = election.releaseStatus(id);
+        assertEq(released, 1);
+        assertFalse(enough); // 1 of 2
+    }
+
+    function test_release_emits_every_envelope() public {
+        uint256 id = _create();
+        _closeVoting();
+
+        bytes[] memory sealed_ = _sealedToPanel("evt");
+        vm.expectEmit(true, true, true, true, address(election));
+        emit Election.ShareReleased(id, 0, sealed_);
+
+        vm.prank(trustee1);
+        election.releaseShare(id, sealed_);
+    }
+
+    function test_k_releases_are_enough_to_tally() public {
+        uint256 id = _create();
+        _voteAll(id);
+        _closeVoting();
+
+        vm.prank(trustee1);
+        election.releaseShare(id, _sealedToPanel("a"));
+        vm.prank(trustee2);
+        election.releaseShare(id, _sealedToPanel("b"));
+
+        (uint8 released,, bool enough) = election.releaseStatus(id);
+        assertEq(released, 2);
+        assertTrue(enough);
+
+        // A trustee holding k shares can now tally.
+        bytes32 counted = keccak256("ballots");
+        vm.prank(trustee1);
+        election.submitTally(id, _totals(2, 1, 0), counted);
+        vm.prank(trustee2);
+        assertTrue(election.submitTally(id, _totals(2, 1, 0), counted));
+    }
+
+    function test_trustee_index_is_recorded_in_share_order() public {
+        uint256 id = _create();
+        assertEq(election.trusteeIndexOf(id, trustee1), 0);
+        assertEq(election.trusteeIndexOf(id, trustee2), 1);
+        assertEq(election.trusteeIndexOf(id, trustee3), 2);
+
+        _closeVoting();
+        // Trustee 3 releases: the flag must land on index 2, not 0.
+        vm.prank(trustee3);
+        election.releaseShare(id, _sealedToPanel("c"));
+        assertTrue(election.shareReleased(id, 2));
+        assertFalse(election.shareReleased(id, 0));
+    }
+
+    function test_non_trustee_cannot_release() public {
+        uint256 id = _create();
+        _closeVoting();
+
+        vm.prank(stranger);
+        vm.expectRevert(Election.NotATrustee.selector);
+        election.releaseShare(id, _sealedToPanel("x"));
+
+        // A voter is not a trustee either.
+        vm.prank(voterA);
+        vm.expectRevert(Election.NotATrustee.selector);
+        election.releaseShare(id, _sealedToPanel("x"));
+    }
+
+    function test_cannot_release_before_close() public {
+        uint256 id = _create();
+        _openVoting();
+
+        vm.prank(trustee1);
+        vm.expectRevert(Election.StillOpen.selector);
+        election.releaseShare(id, _sealedToPanel("early"));
+
+        // Still refused one second before the close.
+        vm.warp(closeAt - 1);
+        vm.prank(trustee1);
+        vm.expectRevert(Election.StillOpen.selector);
+        election.releaseShare(id, _sealedToPanel("early"));
+    }
+
+    function test_cannot_release_twice() public {
+        uint256 id = _create();
+        _closeVoting();
+
+        vm.prank(trustee1);
+        election.releaseShare(id, _sealedToPanel("first"));
+
+        vm.prank(trustee1);
+        vm.expectRevert(Election.AlreadyReleased.selector);
+        election.releaseShare(id, _sealedToPanel("second"));
+
+        assertEq(election.getElection(id).releasedCount, 1);
+    }
+
+    function test_release_needs_one_envelope_per_trustee() public {
+        uint256 id = _create();
+        _closeVoting();
+
+        bytes[] memory tooFew = new bytes[](2);
+        tooFew[0] = hex"01";
+        tooFew[1] = hex"02";
+        vm.prank(trustee1);
+        vm.expectRevert(Election.LengthMismatch.selector);
+        election.releaseShare(id, tooFew);
+
+        bytes[] memory tooMany = new bytes[](4);
+        vm.prank(trustee1);
+        vm.expectRevert(Election.LengthMismatch.selector);
+        election.releaseShare(id, tooMany);
+    }
+
+    function test_release_does_not_touch_tally_state() public {
+        uint256 id = _create();
+        _voteAll(id);
+        _closeVoting();
+
+        vm.prank(trustee1);
+        election.releaseShare(id, _sealedToPanel("a"));
+        vm.prank(trustee2);
+        election.releaseShare(id, _sealedToPanel("b"));
+
+        // Releasing is not submitting: no result, and no submission recorded.
+        (bool isFinal, uint8 agreements,) = election.resultStatus(id);
+        assertFalse(isFinal);
+        assertEq(agreements, 0);
+        assertEq(election.tallySubmission(id, trustee1), bytes32(0));
+        vm.expectRevert(Election.NotFinalized.selector);
+        election.finalResult(id);
+    }
+
+    function test_release_is_per_election() public {
+        uint256 a = _create();
+        uint256 b = _create();
+        _closeVoting();
+
+        vm.prank(trustee1);
+        election.releaseShare(a, _sealedToPanel("a"));
+
+        assertTrue(election.shareReleased(a, 0));
+        assertFalse(election.shareReleased(b, 0));
+
+        // The same trustee may still release in the other election.
+        vm.prank(trustee1);
+        election.releaseShare(b, _sealedToPanel("b"));
+        assertEq(election.getElection(b).releasedCount, 1);
+    }
+
+    function test_all_three_can_release() public {
+        uint256 id = _create();
+        _closeVoting();
+
+        vm.prank(trustee1);
+        election.releaseShare(id, _sealedToPanel("a"));
+        vm.prank(trustee2);
+        election.releaseShare(id, _sealedToPanel("b"));
+        vm.prank(trustee3);
+        election.releaseShare(id, _sealedToPanel("c"));
+
+        assertEq(election.getElection(id).releasedCount, 3);
+        for (uint8 i = 0; i < 3; ++i) {
+            assertTrue(election.shareReleased(id, i));
+        }
+    }
+
     // ------------------------------------------------------------ isolation
 
     function test_elections_do_not_leak_into_each_other() public {

@@ -29,6 +29,8 @@ contract Election {
         uint8 threshold;
         uint32 voterCount;
         uint32 ballotCount;
+        /// How many trustees have released their share to the others.
+        uint8 releasedCount;
         uint64 openAt;
         uint64 closeAt;
         bool exists;
@@ -65,10 +67,14 @@ contract Election {
 
     /// electionId => trustee => on the panel.
     mapping(uint256 => mapping(address => bool)) public isTrustee;
+    /// electionId => trustee => its index in share order. Only meaningful when isTrustee.
+    mapping(uint256 => mapping(address => uint8)) public trusteeIndexOf;
     /// electionId => trustee => keccak256 of its registered ML-KEM-1024 key.
     mapping(uint256 => mapping(address => bytes32)) public trusteeKeyRef;
     /// electionId => trustee index => keccak256 of that trustee's plaintext share.
     mapping(uint256 => mapping(uint8 => bytes32)) public shareCommitment;
+    /// electionId => trustee index => has released its share to the other trustees.
+    mapping(uint256 => mapping(uint8 => bool)) public shareReleased;
 
     /// electionId => trustee => keccak256 of the (totals, countedBallotIdsHash) it submitted.
     mapping(uint256 => mapping(address => bytes32)) public tallySubmission;
@@ -93,6 +99,14 @@ contract Election {
     /// Carries each trustee's sealed share. Public by design: only that
     /// trustee's ML-KEM-1024 key can open it.
     event ShareSealed(uint256 indexed electionId, uint8 indexed trusteeIndex, bytes sealedShare);
+    /// @notice Trustee `trusteeIndex` has handed its share to the whole panel.
+    /// @param sealedToTrustees One envelope per trustee, in trustee order: entry
+    ///        `j` is that trustee's share re-sealed to trustee `j`'s registered
+    ///        ML-KEM-1024 key. Every entry is ciphertext only its addressee can
+    ///        open, so nothing readable reaches the chain.
+    event ShareReleased(
+        uint256 indexed electionId, uint8 indexed trusteeIndex, bytes[] sealedToTrustees
+    );
     /// Carries the whole ciphertext. Storage keeps only `_ballotHash`.
     event BallotCast(
         uint256 indexed electionId,
@@ -133,6 +147,7 @@ contract Election {
     error LengthMismatch();
     error EmptyCiphertext();
     error AlreadySubmitted();
+    error AlreadyReleased();
     error DuplicateTrustee();
     error ZeroAddress();
     error NotFinalized();
@@ -222,6 +237,7 @@ contract Election {
             if (trustee == address(0)) revert ZeroAddress();
             if (isTrustee[electionId][trustee]) revert DuplicateTrustee();
             isTrustee[electionId][trustee] = true;
+            trusteeIndexOf[electionId][trustee] = uint8(i);
             trusteeKeyRef[electionId][trustee] = trusteeKeyRefs[i];
             shareCommitment[electionId][uint8(i)] = shareCommitments[i];
             emit ShareSealed(electionId, uint8(i), sealedShares[i]);
@@ -262,6 +278,43 @@ contract Election {
         ballotVoter[electionId][ballotId] = msg.sender;
 
         emit BallotCast(electionId, ballotId, msg.sender, ballotHash, ciphertext);
+    }
+
+    /// @notice A trustee hands its share to the rest of the panel, so trustees
+    ///         can tally in separate browsers without ever pooling their keys.
+    ///         Panel only, after the close, once each.
+    ///
+    /// @dev The trustee opens its OWN sealed share locally, then re-seals that
+    ///      same share once per trustee to each trustee's registered
+    ///      ML-KEM-1024 key. Entry `j` of `sealedToTrustees` is for trustee `j`.
+    ///      Every entry is ciphertext, so no share is ever readable on chain —
+    ///      which is exactly what the superseded Booth.sol got wrong.
+    ///
+    ///      This contract cannot inspect an envelope, and does not need to:
+    ///      `shareCommitment[electionId][trusteeIndex]` was fixed at creation,
+    ///      so every recipient checks `keccak256(share)` against it after
+    ///      opening. A trustee that releases junk is caught by every other
+    ///      trustee, deterministically.
+    ///
+    ///      Envelopes go in the event only. Storing them would cost millions of
+    ///      gas and nothing on chain ever reads them back.
+    function releaseShare(uint256 electionId, bytes[] calldata sealedToTrustees)
+        external
+        electionExists(electionId)
+    {
+        ElectionData storage e = _elections[electionId];
+
+        if (block.timestamp < e.closeAt) revert StillOpen();
+        if (!isTrustee[electionId][msg.sender]) revert NotATrustee();
+        if (sealedToTrustees.length != e.trusteeCount) revert LengthMismatch();
+
+        uint8 index = trusteeIndexOf[electionId][msg.sender];
+        if (shareReleased[electionId][index]) revert AlreadyReleased();
+
+        shareReleased[electionId][index] = true;
+        e.releasedCount++;
+
+        emit ShareReleased(electionId, index, sealedToTrustees);
     }
 
     /// @notice A trustee submits the totals it decrypted. Panel only, after the
@@ -370,6 +423,18 @@ contract Election {
             _results[electionId].agreements,
             _elections[electionId].threshold
         );
+    }
+
+    /// @notice How many trustees have released their share, and how many are
+    ///         needed before any one of them can tally.
+    function releaseStatus(uint256 electionId)
+        external
+        view
+        electionExists(electionId)
+        returns (uint8 released, uint8 threshold, bool enough)
+    {
+        ElectionData storage e = _elections[electionId];
+        return (e.releasedCount, e.threshold, e.releasedCount >= e.threshold);
     }
 
     function isOpen(uint256 electionId) external view electionExists(electionId) returns (bool) {
