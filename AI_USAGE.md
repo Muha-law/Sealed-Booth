@@ -328,3 +328,68 @@ in small logical commits and push to main.
 - **There is no RECON.md in this repo.** I referred to it three times; the AI
   mapped it to `docs/VERIFIED-FACTS.md`, which holds the recon it was pointing
   at, and flagged the mismatch rather than inventing a file.
+
+---
+
+## 2026-11-26 — Task 6: Election.sol becomes the submission, live run, push blocked
+
+**What I asked**
+
+Push the 11 commits. Answer whether Booth's revealShare ever put shares or the
+election secret on chain in readable form, then make Election.sol the only
+contract: move Booth to legacy/, mark its PROOF.md rows superseded, update
+ARCHITECTURE.md. Confirm the 3 trustee ML-KEM keys are registered and bound to
+their ML-DSA-87 keys. Run one full live election on Election.sol with tight gas
+limits. Document that the relayer can censor but not forge, and that every voter
+gets a receipt. Commit and push.
+
+**What the AI generated**
+
+- Answered the Booth question with evidence rather than from the source: it read
+  `getRevealedShares(2)` off chain, recombined two plaintext shares and
+  recovered the 3,168-byte election decapsulation key, matching the hash the
+  contract stored. Yes — Booth put the election secret on chain in readable
+  form, and election 2's ballot secrecy is gone permanently.
+- Restructured: `contracts/` holds only Election.sol, `legacy/` holds Booth and
+  its harness, `probes/` holds PqcProbe. Foundry builds the submission; the
+  solc-js pipeline was repointed at legacy/ and probes/ so nothing regressed.
+- Confirmed all three trustees live on chain: ML-KEM-1024 registered under
+  algorithm id 2 (1,568 bytes), ML-DSA-87 registered with possessionProven, and
+  each recipient card verifying against both on-chain keys. Already in PROOF.md
+  rows 4, 5, 7, 8, 9, 10.
+- Ran election 5 on Election.sol end to end: 5 voters each casting their own
+  ballot, a refused double vote (AlreadyVoted), a refused early tally
+  (StillOpen), 2 trustees agreeing to finalise, a third refused with
+  TallyMismatch, and all 5 voters verifying inclusion.
+  **hedgehog 3, badger 1, otter 1.** PROOF.md rows 31-37.
+- Hit and diagnosed two real failures instead of guessing:
+  the admin's EVM window had **expired by block count** (live=false while
+  remainingTxs still read 23 — a trap now documented), and a 90,000 gas limit
+  fell below the **EIP-7623 calldata floor** for a 1.7 KB ballot. Gas limits are
+  now `max(estimate x 1.12, calldataFloor x 1.02)`.
+- Documented who can do what: nobody can forge a ballot (msg.sender is the
+  voter), the admin can censor only at registration and only visibly, the
+  trustees can withhold a result but cannot fake one, and every voter gets a
+  receipt that proves inclusion but not correct counting.
+
+**What I changed or decided myself**
+
+- *(blocked)* The push. The authenticated GitHub account has READ only on
+  `Muha-law/Sealed-Booth`; the real 403 is in my notes and nothing was pushed.
+
+**Decided by the AI, flagged for my review**
+
+- Kept the 8 PROOF.md rows from four aborted runs of the election script,
+  marked "(aborted run)", rather than deleting real transactions. Elections 1-4
+  on the contract hold one ballot each and were never tallied.
+- Marked all 20 Booth-era rows "(superseded by Election.sol)" in place.
+- Stated the receipt's honest limit in the docs: it proves inclusion, not that
+  the ballot was counted correctly, since counting happens in the trustees'
+  hands.
+
+**Could not verify**
+
+- The push, per above.
+- Election.sol source verification — no API on this explorer.
+- The four screens still do not exist, and README.md with library credits is
+  still unwritten.
