@@ -1,0 +1,32 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.mnemonic
+*.seed
+*secret*
+*-share.json
+share-*.json
+trustee-*.json
+keystore/
+
+# Dependencies / build
+node_modules/
+dist/
+build/
+.next/
+out/
+artifacts/
+cache/
+
+# Local research scratch (kit tarballs and probes)
+.kitdocs/
+
+# Tooling
+.DS_Store
+*.log
+npm-debug.log*
+coverage/
+.vite/

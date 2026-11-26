@@ -1,0 +1,33 @@
+{
+  "name": "booth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A secret ballot that stays secret after Q-Day. ML-KEM-1024 ballots sealed to a trustee panel on QoreChain.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "compile": "node scripts/compile.mjs",
+    "test": "npm run compile && vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cosmjs/stargate": "0.39.0",
+    "@qorechain/evm": "0.14.0",
+    "@qorechain/pqc": "0.2.3",
+    "@qorechain/qoreseal": "0.1.0",
+    "@qorechain/qoresign": "0.2.0",
+    "@qorechain/sdk": "0.14.0",
+    "shamir-secret-sharing": "0.0.4",
+    "viem": "^2.58.6"
+  },
+  "devDependencies": {
+    "solc": "0.8.28",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
