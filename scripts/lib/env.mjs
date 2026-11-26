@@ -21,7 +21,25 @@ export function loadEnv(path = '.env') {
     }
     env[key] = value;
   }
-  return { ...env, ...process.env };
+  const merged = { ...env, ...process.env };
+
+  // Hard isolation for the per-trustee processes. When BOOTH_ONLY_TRUSTEE=<i>
+  // is set, every other secret is stripped before the caller sees it, so a
+  // trustee process cannot reach another trustee's key even though .env on disk
+  // holds them all. This is what makes "separate processes" a real claim rather
+  // than a convention the code happens to follow.
+  const only = merged.BOOTH_ONLY_TRUSTEE;
+  if (only !== undefined && only !== '') {
+    const keep = `BOOTH_TRUSTEE_${Number(only) + 1}_MNEMONIC`;
+    for (const key of Object.keys(merged)) {
+      if (key.endsWith('_MNEMONIC') && key !== keep) delete merged[key];
+    }
+    if (!merged[keep]) {
+      throw new Error(`BOOTH_ONLY_TRUSTEE=${only} but ${keep} is not set`);
+    }
+  }
+
+  return merged;
 }
 
 export const NETWORK = {

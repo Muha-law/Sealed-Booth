@@ -11,9 +11,10 @@ counted.
 
 | | |
 |---|---|
-| Election contract | [`0x8a90db2f3f2192f94a1376c2b51f34f0628b1110`](https://explore.qore.network/address/0x8a90db2f3f2192f94a1376c2b51f34f0628b1110) |
-| Election that ran | #5 — hedgehog 3, badger 1, otter 1, 2 of 2 trustees agreeing |
-| Transaction record | [PROOF.md](PROOF.md) — 37 rows, every claim with its tx |
+| Election contract | [`0x9c9342a166835214f0f9a0c78eba790cc7340255`](https://explore.qore.network/address/0x9c9342a166835214f0f9a0c78eba790cc7340255) |
+| Elections that ran | #1 here, tallied by **three separate trustee processes**; #5 on the [previous contract](https://explore.qore.network/address/0x8a90db2f3f2192f94a1376c2b51f34f0628b1110) |
+| Both results | hedgehog 3, badger 1, otter 1 |
+| Transaction record | [PROOF.md](PROOF.md) — 48 rows, every claim with its tx |
 | Measured chain facts | [docs/VERIFIED-FACTS.md](docs/VERIFIED-FACTS.md) |
 | Design and trust model | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 
@@ -48,10 +49,18 @@ submits it themselves — `msg.sender` *is* the voter, so a ballot cannot be cas
 in anyone else's name. The contract stores only `keccak256(ciphertext)` and
 emits the ciphertext in an event.
 
-After the close, k trustees each open their own share with their own ML-KEM key,
-recombine the seed off chain, decrypt the ballots locally and submit **totals**.
+After the close each trustee opens its own share with its own ML-KEM key and
+**re-seals it to every other trustee's registered ML-KEM-1024 key**, publishing
+those envelopes with `releaseShare`. Every entry is ciphertext only its
+addressee can open, so trustees can work in separate browsers without pooling
+their keys and without any share becoming readable on chain. A trustee holding k
+shares recombines the seed locally, decrypts the ballots and submits **totals**.
 A result is final only when k trustees submit byte-identical totals *and* the
 same counted-ballot set. No share and no election key ever reaches the chain.
+
+A trustee rejects any released share whose plaintext does not match the
+`shareCommitment` the contract fixed at creation, so a trustee cannot release
+junk undetected.
 
 ```mermaid
 flowchart TB
@@ -153,10 +162,13 @@ deliberately, with the alternative sitting in [`legacy/`](legacy/) as evidence.
 
 ## Honest limitations
 
-- **k colluding trustees can deanonymise every voter.** Ballot ciphertexts are
-  public and `BallotCast` carries the voter's address, so k trustees who
-  recombine the key can link each choice to its voter. Booth reduces this to a
-  k-of-n collusion assumption; it does not remove it.
+- **Any trustee who collects k shares can see who voted what.** This is the
+  sharpest limit in Booth. `releaseShare` means shares travel as ciphertext
+  rather than being published, so the *public* can no longer open ballots — but
+  a trustee that gathers k shares holds the election key, ballot ciphertexts are
+  public, and `BallotCast` carries the voter's address. It can therefore open
+  every ballot and attribute each choice to the voter who cast it. Booth reduces
+  ballot secrecy to a k-of-n trustee assumption; it does not remove it.
 - **This is k-of-n key *recovery*, not threshold decryption.** The tallying
   machine briefly holds the reconstructed election key. A real threshold scheme
   never assembles it anywhere.

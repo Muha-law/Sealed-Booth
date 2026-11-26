@@ -342,6 +342,44 @@ not admit this transaction (remaining: 0 block...)
 `classifyEvmWindowRejection(err)` from `@qorechain/evm/window` correctly
 returns `"exhausted"` for this. Use it rather than reading the message.
 
+## Telling out-of-gas apart from a revert
+
+Measured 2026-11-26. An out-of-gas on this chain surfaces as a **reverted**
+receipt with no revert data, which reads exactly like a contract rejection.
+Two signals separate them:
+
+| | out of gas | contract revert |
+|---|---|---|
+| `gasUsed` vs the limit | **equal to the limit** | below it |
+| replay via `eth_call` at the parent block | **succeeds** | reverts with the error |
+
+Observed: a `submitTally` with limit 86,882 charged exactly 86,882 and
+replayed cleanly at the parent block. It was not `TallyMismatch`; it ran out.
+
+### Why that happened, and the general trap
+
+`submitTally` has two costs and an estimate cannot tell you which you will
+pay. The first submission records a hash; the k-th one also writes the whole
+Result struct including the totals array:
+
+| | gas |
+|---|---|
+| first submission (records only) | 77,574 |
+| k-th submission (finalises) | 199,962 |
+
+Trustees run concurrently and land in the same block, so a trustee that
+estimated as "not the k-th" can execute as the k-th. **Where a function has a
+branch that costs several times more, the gas limit has to cover the expensive
+branch, not the estimate.** Booth floors `submitTally` at 320,000.
+
+## PROOF.md and concurrent writers
+
+The trustee processes run at the same time and each appended to PROOF.md.
+`recordProof` is read-modify-write, so two real `releaseShare` rows were
+silently lost on the first concurrent run. They were recovered by re-reading
+the `ShareReleased` events from the chain, and `recordProof` now takes an
+`O_EXCL` lock file for the duration of the rewrite.
+
 ## Other node limits## Other node limits
 
 - `eth_getLogs` is capped at a **10,000-block** range: `fromBlock: 'earliest'`

@@ -52,6 +52,17 @@ receipts have no such floor and are real execution gas. Both are measured in
 | 35 | trustee 1 submitted its tally for election 5 — one of 2 needed, no result yet *(evm)* | `0x2675d3de…aeb314f0` | gas 77,486 | [explorer](https://explore.qore.network/tx/0x2675d3ded15bedd69a8c7683f66233ae73bed4e1f3ac0228bcbd1207aeb314f0) |
 | 36 | trustee 2 submitted its tally for election 5 — the 2nd matching submission, so the result is now FINAL *(evm)* | `0xd20f4294…9022c71b` | gas 199,874 | [explorer](https://explore.qore.network/tx/0xd20f42944a2eb3532f46a21264a56fa1e938bdb3e5bfb543d41266e29022c71b) |
 | 37 | trustee 3 tried to submit totals contradicting the final result and was REFUSED on chain with TallyMismatch — a dissenting trustee cannot change or dispute a result that k trustees already agreed *(evm)* | `0xc8b85a13…fb57dee2` | gas 55,000 | [explorer](https://explore.qore.network/tx/0xc8b85a13e727e3af6f41917b82ea79239bfcd98c907f30815d319b15fb57dee2) |
+| 38 | relayer opened a fresh EVM authorisation window from the native lane (hybrid-signed) to deploy Election: 20 txs, 8.100000 QOR cap *(native)* | `43C642019E…1720A47F` | gas 188,762 | [explorer](https://explore.qore.network/tx/43C642019EE58E6D264849036617C6A59BDD30C3669817FE16FFC45E1720A47F) |
+| 39 | Election.sol deployed on EVM chain 9800 at 0x9c9342a166835214f0f9a0c78eba790cc7340255 through the relayer's EVM authorisation window. Runtime matches the forge artifact byte for byte (8034 B). Real deployment cost 1786892 gas by eth_estimateGas *(evm)* | `0x43fc1320…d537857e` | gas 1,786,892 | [explorer](https://explore.qore.network/tx/0x43fc1320aca60883e2c54438e1874b0d4f2343521c196a1202dae510d537857e) |
+| 40 | Election.sol (with releaseShare) election 1 created: 3 options, 5-address allowlist, 3 trustees referenced by the keccak256 of their REGISTERED ML-KEM-1024 keys, threshold 2 *(evm)* | `0x68c39dad…29759fe0` | gas 818,317 | [explorer](https://explore.qore.network/tx/0x68c39dad6459b9b74cf9693bcec4401825b4d6b43646a07b1c65610c29759fe0) |
+| 41 | a second ballot from voter 1 was REFUSED on chain with AlreadyVoted *(evm)* | `0xa196d29b…c3e43a81` | gas 56,898 | [explorer](https://explore.qore.network/tx/0xa196d29bff7396701a1c127be5f894bfbe70c4443560bfcf293f2f06c3e43a81) |
+| 42 | a tally submitted before the close was REFUSED on chain with StillOpen *(evm)* | `0x256b24a5…795d93f7` | gas 30,000 | [explorer](https://explore.qore.network/tx/0x256b24a56607a4e768fbc3d045cacbaf0281c3ddaba7fb2e6939f9ec795d93f7) |
+| 43 | trustee 3 released its share to the panel on Election.sol: its own share re-sealed with QoreSeal once per trustee to each trustee's REGISTERED ML-KEM-1024 key, so nothing readable touches the chain. Sent from a process holding only trustee 3's key *(evm)* | `0xe1f5c83a…fba76606` | gas 187,813 | [explorer](https://explore.qore.network/tx/0xe1f5c83a25b88a9dfd7f965b5cfc6d1567acbd92c644a81b7da00198fba76606) |
+| 44 | trustee 3 tallied independently in its own process and submitted totals for election 1 *(evm)* | `0x03d99019…107ee8c1` | gas 77,574 | [explorer](https://explore.qore.network/tx/0x03d9901921d7df304dd956b13f5ce581e528f3ed81ee133d6478107b107ee8c1) |
+| 45 | trustee 1 tallied independently in its own process and submitted totals for election 1 — this was the 2th matching submission, so the result is FINAL *(evm)* | `0x63689f27…1fa1604b` | gas 199,962 | [explorer](https://explore.qore.network/tx/0x63689f2793aab58d3652e8efb71dd77e0bfe9fa4e59dabaaf85f4c5c1fa1604b) |
+| 46 | trustee 2 tallied independently in its own process and submitted totals for election 1 — this was the 3th matching submission, so the result is FINAL *(evm)* | `0x1c158753…61789dff` | gas 163,200 | [explorer](https://explore.qore.network/tx/0x1c158753451ffeec9d7e4b348320e33873626715198dfdc45b0bcaa261789dff) |
+| 47 | trustee 1 released its share to the panel on Election.sol: its own share re-sealed with QoreSeal once per trustee to each trustee's REGISTERED ML-KEM-1024 key, so nothing readable touches the chain. Sent from a process holding only trustee 1's key *(evm)* | `0x2a9f03c3…17f20965` | gas 187,801 | [explorer](https://explore.qore.network/tx/0x2a9f03c36ee57ea9f75126decfdc9758a0b23274f749ccb53f3cca8217f20965) |
+| 48 | trustee 2 released its share to the panel on Election.sol: its own share re-sealed with QoreSeal once per trustee to each trustee's REGISTERED ML-KEM-1024 key, so nothing readable touches the chain. Sent from a process holding only trustee 2's key *(evm)* | `0xe90993d4…5f05be4e` | gas 187,801 | [explorer](https://explore.qore.network/tx/0xe90993d4749a80da2914f0abef644bc5fbacf62902c22f305efc713e5f05be4e) |
 
 ## Gas: what is actually consumed
 
@@ -126,6 +137,53 @@ were counted locally. **No share and no election key ever went on chain.**
 Elections 1-4 on this contract are abandoned attempts from earlier runs of the
 same script (rows 23-30). They hold a ballot each and were never tallied. They
 are left on chain and marked rather than hidden.
+
+## Election 1 on the current contract: three separate trustee processes
+
+Contract `0x9c9342a166835214f0f9a0c78eba790cc7340255` — the version with
+`releaseShare`. Rows 38-48.
+
+```
+hedgehog    3  ###
+badger      1  #
+otter       1  #
+agreeing trustees 3 (threshold 2), shares released 3 of 3
+countedBallotIdsHash 0x561b87cfd23e0d80187f852882963ae53546603503ea698e26690e46fdf86dbb
+```
+
+What is different from election 5: the trustees ran as **three separate OS
+processes**, each spawned with `BOOTH_ONLY_TRUSTEE=<i>` so `loadEnv` strips
+every other secret. No process in the run held more than one trustee key.
+
+Each trustee independently:
+
+1. opened its OWN sealed share with its own ML-KEM-1024 key and checked it
+   against the commitment the contract fixed at creation;
+2. re-sealed that share once per trustee to each trustee's **registered**
+   ML-KEM-1024 key and published the envelopes via `releaseShare`
+   (rows 43, 47, 48) — every entry ciphertext, nothing readable on chain;
+3. collected the shares released to it, rejecting any whose plaintext did not
+   match its on-chain commitment;
+4. recombined the seed, confirmed the rebuilt key matched the chain's
+   `electionKeyHash`, decrypted the ballots and submitted totals
+   (rows 44, 45, 46).
+
+All three computed identical totals without ever sharing a key.
+Row 41 is the refused double vote (`AlreadyVoted`); row 42 the refused early
+tally (`StillOpen`).
+
+**The limit this does not remove:** any trustee that collects k shares can
+open every ballot, and the ballot events carry the voter's address, so it can
+see who voted what. `releaseShare` removes the *public* exposure that Booth v1
+had; it does not remove trustee power.
+
+### A row that had to be recovered
+
+Rows 47 and 48 were written after the fact. The three trustee processes each
+appended to this file at once and `recordProof` was read-modify-write, so two
+real `releaseShare` rows were lost. They were recovered by re-reading the
+`ShareReleased` events from the chain, and the writer now takes a lock. The
+transactions were always on chain; only the bookkeeping failed.
 
 ## Gas limits: two floors, not one
 

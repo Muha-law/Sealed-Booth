@@ -30,3 +30,4 @@ cache/
 npm-debug.log*
 coverage/
 .vite/
+PROOF.md.lock

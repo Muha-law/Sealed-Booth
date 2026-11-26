@@ -37,13 +37,20 @@ const runtime = artifact.deployedBytecode.object as Hex;
 
 const client = publicClient();
 
-if (env.ELECTION_CONTRACT_ADDRESS) {
+const redeploy = process.argv.includes('--redeploy');
+
+if (env.ELECTION_CONTRACT_ADDRESS && !redeploy) {
   const code = await client.getCode({ address: env.ELECTION_CONTRACT_ADDRESS as Hex });
   if (code && code !== '0x') {
     console.log(`Election already deployed at ${env.ELECTION_CONTRACT_ADDRESS}.`);
-    console.log('Remove ELECTION_CONTRACT_ADDRESS from .env to deploy a fresh one.');
+    console.log('Pass --redeploy to deploy a new one. The current address is kept as');
+    console.log('ELECTION_V1_CONTRACT_ADDRESS so earlier elections stay citable.');
     process.exit(0);
   }
+}
+if (redeploy && env.ELECTION_CONTRACT_ADDRESS) {
+  console.log(`redeploying — previous contract ${env.ELECTION_CONTRACT_ADDRESS}`);
+  console.log('  kept as ELECTION_V1_CONTRACT_ADDRESS (election 5 lives there)\n');
 }
 
 console.log(`relayer  ${relayer.cosmos}`);
@@ -124,12 +131,14 @@ recordProof({
   lane: 'evm',
 });
 
-const current = readFileSync('.env', 'utf8');
-writeFileSync(
-  '.env',
-  current.includes('ELECTION_CONTRACT_ADDRESS=')
-    ? current.replace(/ELECTION_CONTRACT_ADDRESS=.*/g, `ELECTION_CONTRACT_ADDRESS=${address}`)
-    : `${current.trimEnd()}\nELECTION_CONTRACT_ADDRESS=${address}\n`,
-  'utf8',
-);
+let current = readFileSync('.env', 'utf8');
+const previous = env.ELECTION_CONTRACT_ADDRESS;
+// Keep the superseded address so PROOF.md rows for earlier elections stay citable.
+if (redeploy && previous && !current.includes('ELECTION_V1_CONTRACT_ADDRESS=')) {
+  current = `${current.trimEnd()}\nELECTION_V1_CONTRACT_ADDRESS=${previous}\n`;
+}
+current = current.includes('ELECTION_CONTRACT_ADDRESS=')
+  ? current.replace(/^ELECTION_CONTRACT_ADDRESS=.*$/m, `ELECTION_CONTRACT_ADDRESS=${address}`)
+  : `${current.trimEnd()}\nELECTION_CONTRACT_ADDRESS=${address}\n`;
+writeFileSync('.env', current, 'utf8');
 console.log('\nWrote ELECTION_CONTRACT_ADDRESS to .env');

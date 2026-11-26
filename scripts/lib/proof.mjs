@@ -5,10 +5,51 @@
  * This helper refuses to write without a transaction hash, and records the gas
  * the receipt actually reported rather than an estimate.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { explorerTx } from './env.mjs';
 
 const PATH = 'PROOF.md';
+const LOCK = 'PROOF.md.lock';
+
+/**
+ * Cross-process lock.
+ *
+ * recordProof is read-modify-write, and the trustee processes run concurrently.
+ * Without this, three trustees appending at once silently lose rows — it
+ * happened: two real releaseShare transactions landed on chain and their rows
+ * never reached the file. An O_EXCL lock file is enough; it is the same
+ * primitive a mutex would use and needs no dependency.
+ */
+function withLock(fn) {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    let fd;
+    try {
+      fd = openSync(LOCK, 'wx');
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      if (Date.now() > deadline) {
+        throw new Error(`timed out waiting for ${LOCK}; delete it if it is stale`);
+      }
+      // Busy-wait briefly. These writes are rare and short.
+      const until = Date.now() + 40;
+      while (Date.now() < until) {
+        /* spin */
+      }
+      continue;
+    }
+    try {
+      return fn();
+    } finally {
+      closeSync(fd);
+      try {
+        unlinkSync(LOCK);
+      } catch {
+        /* already gone */
+      }
+    }
+  }
+}
 const PLACEHOLDER = '| | *(no transactions yet)* | | |';
 
 /**
@@ -27,6 +68,10 @@ export function recordProof(row) {
   }
   if (!row.proves) throw new Error('every PROOF.md row must say what it proves');
 
+  return withLock(() => appendRow(row));
+}
+
+function appendRow(row) {
   const md = readFileSync(PATH, 'utf8');
   const lines = md.split(/\r?\n/);
 

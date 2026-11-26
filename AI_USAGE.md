@@ -393,3 +393,64 @@ gets a receipt. Commit and push.
 - Election.sol source verification — no API on this explorer.
 - The four screens still do not exist, and README.md with library credits is
   still unwritten.
+
+---
+
+## 2026-11-26 — Task 7: releaseShare, and trustees in separate processes
+
+**What I asked**
+
+Add releaseShare to Election.sol (trustee only, after close only, once each,
+re-sealed to every trustee's registered key, ShareReleased event, commitment
+check), forge tests, redeploy, and rerun the live election with each trustee as
+a separate process. Keep election 5 on the old contract as the Results proof.
+Also fix the stale v1 wording, and tell me the EVM window maximum.
+
+**What the AI generated**
+
+- `releaseShare` as specified, 11 new forge tests (49 total), redeployed to
+  `0x9c9342a166835214f0f9a0c78eba790cc7340255`. The previous contract is kept
+  in `.env` as `ELECTION_V1_CONTRACT_ADDRESS` so election 5 stays citable.
+- Made the process separation **real, not asserted**: each trustee is spawned
+  with `BOOTH_ONLY_TRUSTEE=<i>` and `loadEnv` strips every other secret, so a
+  trustee process literally cannot read another trustee's key. It demonstrated
+  this before relying on it.
+- Ran election 1 on the new contract: 5 ballots, refused double vote, refused
+  early tally, then three separate processes each released a share, collected
+  the others, verified every share against its on-chain commitment, recombined
+  and counted independently — all three got hedgehog 3, badger 1, otter 1.
+- Measured the window cap honestly: 17,280 blocks at a measured 1.427 s/block =
+  **6 h 51 m**, not the ~5 h the SDK README implies. Far short of judging, so a
+  keeper is unavoidable.
+
+**Three failures it diagnosed rather than papered over**
+
+- A transient DNS failure mid-run. It confirmed connectivity, read the chain
+  state, and resumed instead of restarting the election.
+- Two `submitTally` calls "reverted". It proved they were **out of gas**, not
+  rejections: `gasUsed` equalled the limit and replay at the parent block
+  succeeded. Cause: `submitTally` costs 77k as a plain record and 200k when it
+  finalises, trustees land in the same block, so a trustee that estimated as
+  "not the k-th" executed as the k-th. Now floored at 320k.
+- Two real `releaseShare` rows vanished from PROOF.md — three concurrent
+  processes racing on a read-modify-write. It recovered both from the
+  `ShareReleased` events on chain and put a lock file around the writer. It
+  flagged this in PROOF.md rather than leaving the file quietly short.
+
+**What I changed or decided myself**
+
+- *(pending)* Approved the keeper on GitHub Actions; secret names and the QOR
+  budget are mine to action next.
+
+**Decided by the AI, flagged for my review**
+
+- `releaseShare` requires exactly one envelope per trustee so index j is
+  unambiguously trustee j's, and stores only a boolean plus a count; envelopes
+  live in the event because storing ~5.3 KB would cost millions of gas.
+- Extracted `scripts/11-tally-trustees.ts` so the spawn-and-verify path is
+  reusable by the demo election rather than throwaway.
+
+**Could not verify**
+
+- Nothing outstanding from this task. 49 forge + 27 vitest passing, typecheck
+  clean. The four screens and the keeper are still unbuilt.
