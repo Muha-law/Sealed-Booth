@@ -380,6 +380,24 @@ silently lost on the first concurrent run. They were recovered by re-reading
 the `ShareReleased` events from the chain, and `recordProof` now takes an
 `O_EXCL` lock file for the duration of the rewrite.
 
+## The two registry readers disagree about address form
+
+Measured 2026-11-26 against a real registered account.
+
+| Reader | `qor1…` | `0x…` |
+|---|---|---|
+| `fetchPqcStatus` (`/qorechain/pqc/v1/account/{addr}`) | works | **HTTP 400** |
+| `fetchKemKey` (`/qorechain/pqc/v1/kem/{addr}`) | works | works |
+
+The `@qorechain/qoreseal` README says `fetchKemKey` "accepts a `qor1` or `0x`
+address", and it does. `fetchPqcStatus` does not, and the failure is a bare
+`HTTP 400` wrapped in "cannot tell whether … has a registered PQC key" — which
+reads like a missing key rather than a malformed request.
+
+Booth converts with `toQorAddress` from `@qorechain/evm/window` before any
+PQC-status read. This bit during the first v2 tally: ballots carry `0x`
+addresses, so every trustee process failed at once.
+
 ## Other node limits## Other node limits
 
 - `eth_getLogs` is capped at a **10,000-block** range: `fromBlock: 'earliest'`

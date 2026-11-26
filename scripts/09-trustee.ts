@@ -31,6 +31,7 @@ import {
   type Hex,
 } from 'viem';
 import { fetchKemKey } from '@qorechain/qoreseal/network';
+import { toQorAddress } from '@qorechain/evm/window';
 import { open, seal, sealKeysFromSeed, verifyRecipientCard } from '@qorechain/qoreseal';
 import { fetchPqcStatus } from '@qorechain/sdk';
 import { fromBase64 } from '@qorechain/qoresign';
@@ -347,10 +348,12 @@ const registryKeys: Map<string, Uint8Array> = new Map();
 for (const b of ballots) {
   const key = b.voter.toLowerCase();
   if (registryKeys.has(key)) continue;
-  const status = (await fetchPqcStatus({ rest: NETWORK.rest, address: b.voter })) as {
-    pubkey?: string;
-    registered?: boolean;
-  };
+  // fetchPqcStatus needs the bech32 form: a 0x address returns HTTP 400.
+  // fetchKemKey accepts either, which makes the asymmetry easy to miss.
+  const status = (await fetchPqcStatus({
+    rest: NETWORK.rest,
+    address: toQorAddress(b.voter),
+  })) as { pubkey?: string; registered?: boolean };
   if (status.pubkey) registryKeys.set(key, fromBase64(status.pubkey));
 }
 log(`fetched ${registryKeys.size} registered ML-DSA-87 key(s) for ${ballots.length} ballot(s)`);
