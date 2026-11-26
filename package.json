@@ -20,6 +20,9 @@
   },
   "dependencies": {
     "@cosmjs/stargate": "0.39.0",
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "@qorechain/evm": "0.14.0",
     "@qorechain/pqc": "0.2.3",
     "@qorechain/qoreseal": "0.1.0",

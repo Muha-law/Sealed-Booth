@@ -115,3 +115,78 @@ footer p { margin: 0.3rem 0; }
 .steps { margin: 0.5rem 0; padding-left: 1.1rem; }
 .steps li { margin: 0.2rem 0; }
 .done::marker { content: '✓ '; color: var(--accent); }
+
+/* ---------------------------------------------------------- Q-Day screen */
+
+.sim-badge {
+  display: inline-block;
+  margin: 0 0 1rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  color: var(--warn);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.qday-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+@media (max-width: 40rem) {
+  .qday-grid { grid-template-columns: 1fr; }
+}
+
+.qday-col {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.qday-col h3 { margin-top: 0; }
+
+.qday-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  margin: 0.35rem 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-variant-numeric: tabular-nums;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.qday-row.sealed { color: var(--muted); }
+
+/* Broken open: the name is public. Red, and it flashes once. */
+.qday-row.broken {
+  color: #fecaca;
+  border-color: #b91c1c;
+  background: color-mix(in srgb, #b91c1c 22%, transparent);
+  font-weight: 600;
+  animation: qday-break 320ms ease-out;
+}
+@media (prefers-color-scheme: light) {
+  .qday-row.broken { color: #7f1d1d; background: color-mix(in srgb, #ef4444 14%, transparent); }
+}
+@keyframes qday-break {
+  0%   { transform: translateX(0); background: color-mix(in srgb, #ef4444 60%, transparent); }
+  25%  { transform: translateX(-3px); }
+  60%  { transform: translateX(2px); }
+  100% { transform: translateX(0); }
+}
+
+/* Held: still sealed. Green, and it does not move. */
+.qday-row.held {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.qday-row.held code { font-size: 0.72rem; opacity: 0.85; }

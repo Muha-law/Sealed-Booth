@@ -184,11 +184,19 @@ deliberately, with the alternative sitting in [`legacy/`](legacy/) as evidence.
   is detectable — but it is not prevented.
 - **Trustees can stall indefinitely.** Fewer than k submissions means no result.
   There is no timeout or fallback.
-- **No browser UI yet.** The whole flow is driven by scripts. QoreX rejects
-  `eth_sendTransaction`, `personal_sign` and `eth_signTypedData_v4` today
-  (measured — docs/VERIFIED-FACTS.md), and MetaMask cannot produce the
-  hybrid native-lane signature that opening an EVM window requires. So a real
-  browser voting path is an open design question, not a finished feature.
+- **The Q-Day screen is a simulation, and says so on screen.** No quantum
+  computer exists; the adversary is simply handed the classical X25519 private
+  keys, which is the honest consequence of one. The refusals shown are
+  QoreSeal's own error codes, and the ballots really do open with the correct
+  key — but it is a demonstration, not an audit.
+- **Voting needs a published demo key.** QoreX rejects
+  `eth_sendTransaction`, `personal_sign` and `eth_signTypedData_v4`
+  (measured — docs/VERIFIED-FACTS.md), and MetaMask cannot produce the hybrid
+  native-lane signature that opening an EVM window needs. Nor can a page reach
+  the REST or Tendermint endpoints, which send no CORS headers. So a voter must
+  use a pre-provisioned identity whose keys are published in the page. Each is
+  single-use and holds a few cents of worthless testnet QOR, and the Vote screen
+  says so plainly — but anyone can read those keys, and burn those ballots.
 - **The contract is not source-verified**, because `explore.qore.network`
   exposes no verification API and Sourcify does not list chain 9800. Instead the
   compiler and settings are pinned and the deployed runtime is checked against
@@ -218,6 +226,7 @@ All Apache-2.0, © QoreChain Association.
 |---|---|---|
 | [`shamir-secret-sharing`](https://github.com/privy-io/shamir-secret-sharing) (Privy) | 0.0.4 | splitting and recombining the 32-byte election seed — the only non-kit cryptographic dependency, Apache-2.0, independently audited, zero-dependency |
 | [`viem`](https://viem.sh) | ^2.58.6 | EVM client and ABI encoding |
+| [`@noble/curves`](https://github.com/paulmillr/noble-curves) · [`@noble/ciphers`](https://github.com/paulmillr/noble-ciphers) · [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) | 2.4.0 | **only** in `src/core/qday.ts`, to model today's X25519-only ballot for the Q-Day comparison. Booth's real ballots never touch them directly — those go through QoreSeal |
 | [`@cosmjs/stargate`](https://github.com/cosmos/cosmjs) | 0.39.0 | native-lane broadcasting |
 | [`solc`](https://soliditylang.org) | 0.8.28 | legacy and probe contracts |
 | [`forge-std`](https://github.com/foundry-rs/forge-std) | v1.17.0 | Solidity tests |
