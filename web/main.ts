@@ -100,8 +100,15 @@ async function showChainStatus() {
 
 async function boot() {
   pool = await loadPool();
-  // Screens are imported for their side effect of registering themselves.
-  await Promise.all([import('./results.ts'), import('./vote.ts'), import('./qday.ts')]);
+
+  // Imported SEQUENTIALLY, not with Promise.all. Each module registers itself
+  // as a side effect, so a parallel import makes nav order — and therefore the
+  // landing screen — depend on which chunk happens to arrive first. That is
+  // fine on a warm cache and wrong on a cold one, which is what a first-time
+  // visitor gets: it showed Vote instead of Results.
+  await import('./results.ts');
+  await import('./vote.ts');
+  await import('./qday.ts');
   window.addEventListener('hashchange', route);
   await route();
   await showChainStatus();

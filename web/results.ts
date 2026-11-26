@@ -14,6 +14,7 @@ import {
   addressUrl,
   client,
   read,
+  txUrl,
   until,
   type ElectionData,
 } from './chain.ts';
@@ -146,11 +147,38 @@ registerScreen({
         ),
       ),
       el(
-        'p',
-        { className: 'muted' },
-        'Contract ',
-        el('a', { href: addressUrl(contract), target: '_blank', rel: 'noreferrer' }, contract),
-        ' · every transaction is listed in PROOF.md in the repository.',
+        'div',
+        { className: 'panel' },
+        el('h3', {}, 'Check it yourself'),
+        el(
+          'p',
+          { className: 'muted' },
+          'Contract ',
+          el('a', { href: addressUrl(contract), target: '_blank', rel: 'noreferrer' }, contract),
+        ),
+        el(
+          'table',
+          {},
+          ...PROOF_ELECTION.transactions.map((t) =>
+            el(
+              'tr',
+              {},
+              el('th', {}, t.label),
+              el(
+                'td',
+                {},
+                el('a', { href: txUrl(t.hash), target: '_blank', rel: 'noreferrer' }, 'explorer'),
+              ),
+            ),
+          ),
+        ),
+        el(
+          'p',
+          { className: 'muted' },
+          'The two refusals above are meant to have failed — that is the point of ' +
+            'them. Every transaction Booth has ever sent is listed in PROOF.md in ' +
+            'the repository.',
+        ),
       ),
     );
 
