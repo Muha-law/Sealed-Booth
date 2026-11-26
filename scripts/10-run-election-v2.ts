@@ -21,7 +21,7 @@ import {
   type Hex,
 } from 'viem';
 import { fetchKemKey } from '@qorechain/qoreseal/network';
-import { seal, verifyRecipientCard } from '@qorechain/qoreseal';
+import { verifyRecipientCard } from '@qorechain/qoreseal';
 import { fetchPqcStatus, msg } from '@qorechain/sdk';
 import { buildRegisterPqKeyMessage, fromBase64 } from '@qorechain/qoresign';
 
@@ -36,8 +36,8 @@ import { ensureWindow, publicClient, walletClient, maxFeePerGas } from './lib/ev
 // @ts-expect-error - .mjs helper
 import { recordProof } from './lib/proof.mjs';
 import { setUpElection } from '../src/core/election.js';
-import { ballotAad, ballotPlaintext } from '../src/core/ballot.js';
-import { BALLOT_PURPOSE } from '../src/core/constants.js';
+import { castBallot } from '../src/core/ballot.js';
+
 
 const env = loadEnv();
 const CONTRACT = requireEnv(env, 'ELECTION_CONTRACT_ADDRESS') as Hex;
@@ -235,23 +235,21 @@ recordProof({
 });
 
 const ref = { evmChainId: NETWORK.evmChainId, contract: CONTRACT, electionId };
-const aad = ballotAad(ref);
-const recipient = {
-  mlkemPublicKey: setup.electionPublicKey.slice(1, 1569),
-  x25519PublicKey: setup.electionPublicKey.slice(1569),
-};
 
 console.log('\n--- 5 ballots ---');
 const receipts: { label: string; voter: Hex; ballotId: bigint; hash: Hex }[] = [];
 for (const v of voters) {
-  const envelope = seal({
+  // The ML-DSA-87 signature is sealed INSIDE the envelope, bound to this
+  // voter's address so the ciphertext cannot be replayed from another account.
+  const sealed = castBallot({
+    ...ref,
     chainId: NETWORK.chainId,
-    purpose: BALLOT_PURPOSE,
-    mode: 'hybrid',
-    recipients: [recipient],
-    plaintext: ballotPlaintext(v.choice),
-    aad,
+    electionPublicKey: setup.electionPublicKey,
+    choice: v.choice,
+    voter: v.account.evm as Hex,
+    mldsaSecretKey: v.account.pqc.secretKey,
   });
+  const envelope = sealed.envelope;
   const sent = await sendFrom(v.account.privateKey, v.account.evm, 'castBallot', [
     electionId,
     toHex(envelope),
@@ -267,14 +265,14 @@ for (const v of voters) {
 }
 
 console.log('\n--- double vote (expect AlreadyVoted) ---');
-const dupEnvelope = seal({
+const dupEnvelope = castBallot({
+  ...ref,
   chainId: NETWORK.chainId,
-  purpose: BALLOT_PURPOSE,
-  mode: 'hybrid',
-  recipients: [recipient],
-  plaintext: ballotPlaintext('otter'),
-  aad,
-});
+  electionPublicKey: setup.electionPublicKey,
+  choice: 'otter',
+  voter: voters[0]!.account.evm as Hex,
+  mldsaSecretKey: voters[0]!.account.pqc.secretKey,
+}).envelope;
 const dup = await expectRevert(
   voters[0]!.account.privateKey,
   voters[0]!.account.evm,

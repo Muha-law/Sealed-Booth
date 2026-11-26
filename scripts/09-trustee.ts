@@ -46,9 +46,9 @@ import { unifiedAccount } from './lib/chain.mjs';
 import { ensureWindow, publicClient, walletClient, maxFeePerGas } from './lib/evm.mjs';
 // @ts-expect-error - .mjs helper
 import { recordProof } from './lib/proof.mjs';
-import { BALLOT_PURPOSE, SHARE_PURPOSE, BALLOT_PLAINTEXT_VERSION } from '../src/core/constants.js';
-import { ballotAad } from '../src/core/ballot.js';
+import { SHARE_PURPOSE } from '../src/core/constants.js';
 import { packElectionKey } from '../src/core/electionKey.js';
+import { tallyBallots, type OnChainBallot, type RegistryKeys } from '../src/core/tally.js';
 
 const ME = Number(process.argv[2]);
 const ELECTION_ID = BigInt(process.argv[3] ?? '0');
@@ -145,7 +145,8 @@ const logs = await client.getLogs({ address: CONTRACT, fromBlock, toBlock: 'late
 let trusteeAddresses: Hex[] = [];
 let keyRefs: Hex[] = [];
 const sealedByIndex = new Map<number, Uint8Array>();
-const ballots: { ballotId: bigint; ciphertext: Uint8Array }[] = [];
+const ballots: OnChainBallot[] = [];
+const roll = new Set<string>();
 
 for (const l of logs) {
   let parsed;
@@ -163,7 +164,15 @@ for (const l of logs) {
   } else if (parsed.eventName === 'ShareSealed') {
     sealedByIndex.set(Number(a.trusteeIndex), bytes(a.sealedShare as string));
   } else if (parsed.eventName === 'BallotCast') {
-    ballots.push({ ballotId: a.ballotId as bigint, ciphertext: bytes(a.ciphertext as string) });
+    ballots.push({
+      ballotId: a.ballotId as bigint,
+      // The CHAIN's view of who cast it. tallyBallots rebuilds the signed
+      // message from this, never from anything inside the ballot.
+      voter: a.voter as Hex,
+      ciphertext: bytes(a.ciphertext as string),
+    });
+  } else if (parsed.eventName === 'VoterAllowed') {
+    roll.add((a.voter as string).toLowerCase());
   }
 }
 if (trusteeAddresses.length !== n) throw new Error('could not read the panel from the chain');
@@ -330,24 +339,44 @@ if (rebuiltHash.toLowerCase() !== election.electionKeyHash.toLowerCase()) {
 }
 log('recombined the seed and rebuilt the election key the chain committed to');
 
-const aad = ballotAad({ evmChainId: NETWORK.evmChainId, contract: CONTRACT, electionId: ELECTION_ID });
-ballots.sort((a, b) => Number(a.ballotId - b.ballotId));
-const totals = options.map(() => 0n);
+// Every voter's ML-DSA-87 key, from the chain's PQC registry. The identity
+// comes from the registry and the signature from the ballot — never both from
+// the ballot. This endpoint sends no CORS headers, which is why the tally runs
+// here and not in a browser page.
+const registryKeys: Map<string, Uint8Array> = new Map();
 for (const b of ballots) {
-  const plain = JSON.parse(
-    new TextDecoder().decode(
-      open({ chainId: NETWORK.chainId, purpose: BALLOT_PURPOSE, envelope: b.ciphertext, keys, aad }),
-    ),
-  ) as { v: number; choice: string };
-  if (plain.v !== BALLOT_PLAINTEXT_VERSION) throw new Error('unexpected ballot version');
-  const at = options.indexOf(plain.choice);
-  if (at < 0) throw new Error(`ballot ${b.ballotId} chose an unknown option`);
-  totals[at]!++;
+  const key = b.voter.toLowerCase();
+  if (registryKeys.has(key)) continue;
+  const status = (await fetchPqcStatus({ rest: NETWORK.rest, address: b.voter })) as {
+    pubkey?: string;
+    registered?: boolean;
+  };
+  if (status.pubkey) registryKeys.set(key, fromBase64(status.pubkey));
 }
+log(`fetched ${registryKeys.size} registered ML-DSA-87 key(s) for ${ballots.length} ballot(s)`);
+
+const result = tallyBallots({
+  evmChainId: NETWORK.evmChainId,
+  contract: CONTRACT,
+  electionId: ELECTION_ID,
+  chainId: NETWORK.chainId,
+  options,
+  ballots,
+  roll,
+  registryKeys: registryKeys as RegistryKeys,
+  keys,
+});
+
+const totals = options.map((o) => BigInt(result.counts.get(o) ?? 0));
 const countedBallotIdsHash = keccak256(
-  encodeAbiParameters(parseAbiParameters('uint256[]'), [ballots.map((b) => b.ballotId)]),
+  encodeAbiParameters(parseAbiParameters('uint256[]'), [result.countedBallotIds]),
 );
-log(`counted ${ballots.length} ballots: ${options.map((o, i) => `${o}=${totals[i]}`).join('  ')}`);
+
+log(`counted ${result.counted} of ${ballots.length} ballots: ${options.map((o, i) => `${o}=${totals[i]}`).join('  ')}`);
+for (const r of result.rejected) {
+  log(`  REJECTED ballot ${r.ballotId} from ${r.voter}: ${r.reason}${r.detail ? ` (${r.detail})` : ''}`);
+}
+if (result.rejected.length === 0) log('  no ballots rejected');
 
 const already = (await read('tallySubmission', [ELECTION_ID, myUnified.evm])) as Hex;
 if (already !== '0x0000000000000000000000000000000000000000000000000000000000000000') {

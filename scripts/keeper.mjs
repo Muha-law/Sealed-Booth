@@ -41,9 +41,17 @@ const WINDOW_BLOCKS = 17_280;
 const WINDOW_TXS = 3;
 /** Gas a ballot might use, for sizing the window's value cap. */
 const WINDOW_GAS_EACH = 400_000n;
-/** Top a pool member up to this when it falls below MIN_BALANCE. */
-const TOPUP_TO_UQOR = 250_000n;
-const MIN_BALANCE_UQOR = 120_000n;
+/**
+ * Top a pool member up to this when it falls below MIN_BALANCE.
+ *
+ * Measured: a v2 ballot costs 0.041915 QOR at its gas limit (6,500 bytes of
+ * calldata, 277,220 gas, where the EIP-7623 floor is the binding constraint)
+ * and opening a window costs 0.045. So 0.0869 per use, and 0.35 gives a 4x
+ * margin. Exposure is bounded: these keys are published, so only the 8 pool
+ * members hold this much at a time.
+ */
+const TOPUP_TO_UQOR = 350_000n;
+const MIN_BALANCE_UQOR = 150_000n;
 /** Shout if the relayer falls below this. */
 const RELAYER_FLOOR_UQOR = 3_000_000n;
 

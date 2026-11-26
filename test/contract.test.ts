@@ -28,7 +28,11 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { voterFromMnemonic } from '../src/core/identity.js';
-import { BALLOT_DOMAIN, ballotCommitment, type ElectionRef } from '../src/core/ballot.js';
+import {
+  BOOTH_BALLOT_DOMAIN,
+  boothBallotCommitment,
+  type BoothElectionRef,
+} from '../legacy/booth-ballot.js';
 
 const RPC = process.env.QORECHAIN_EVM_RPC ?? 'https://evm-testnet.qore.host';
 const EVM_CHAIN_ID = 9800;
@@ -83,7 +87,7 @@ async function callHarness<T>(functionName: string, args: unknown[]): Promise<T>
 /** The harness always creates the first election in a fresh override, so id 1. */
 const HARNESS_ELECTION_ID = 1n;
 
-const ref: ElectionRef = {
+const ref: BoothElectionRef = {
   evmChainId: EVM_CHAIN_ID,
   contract: BOOTH_ADDR,
   electionId: HARNESS_ELECTION_ID,
@@ -93,7 +97,7 @@ const ref: ElectionRef = {
 async function signedBallot(voter: ReturnType<typeof voterFromMnemonic>, envelope: Uint8Array) {
   const mldsaKeyHash = keccak256(voter.mldsaPublicKey);
   const envelopeHash = keccak256(envelope);
-  const commitment = ballotCommitment(ref, mldsaKeyHash, envelopeHash);
+  const commitment = boothBallotCommitment(ref, mldsaKeyHash, envelopeHash);
   const account = privateKeyToAccount(voter.evmPrivateKey);
   const secpSignature = await account.signMessage({ message: { raw: commitment } });
   // The deployed contract does not check the ML-DSA signature today, so any
@@ -120,7 +124,7 @@ describe.skipIf(SKIP)('Booth on the real testnet EVM (state override, no deploym
   }, 60_000);
 
   it('agrees with the TypeScript BALLOT_DOMAIN', async () => {
-    expect(await callBooth<Hex>('BALLOT_DOMAIN', [])).toBe(BALLOT_DOMAIN);
+    expect(await callBooth<Hex>('BALLOT_DOMAIN', [])).toBe(BOOTH_BALLOT_DOMAIN);
   });
 
   it('computes the same ballot commitment as the TypeScript does', async () => {
@@ -134,7 +138,7 @@ describe.skipIf(SKIP)('Booth on the real testnet EVM (state override, no deploym
         keyHash,
         envelopeHash,
       ]);
-      const offChain = ballotCommitment({ ...ref, electionId }, keyHash, envelopeHash);
+      const offChain = boothBallotCommitment({ ...ref, electionId }, keyHash, envelopeHash);
 
       expect(onChain, `election ${electionId}`).toBe(offChain);
     }
@@ -196,7 +200,7 @@ describe.skipIf(SKIP)('Booth on the real testnet EVM (state override, no deploym
 
     // Impostor signs, but presents the voter's ML-DSA key and the voter is on the roll.
     const mldsaKeyHash = keccak256(voter.mldsaPublicKey);
-    const commitment = ballotCommitment(ref, mldsaKeyHash, keccak256(envelope));
+    const commitment = boothBallotCommitment(ref, mldsaKeyHash, keccak256(envelope));
     const secpSignature = await privateKeyToAccount(impostor.evmPrivateKey).signMessage({
       message: { raw: commitment },
     });
