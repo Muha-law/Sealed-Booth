@@ -2,24 +2,33 @@
 // Nothing here is invented: every value was measured against the live testnet.
 import { readFileSync, existsSync } from 'node:fs';
 
-/** Minimal .env reader. No dependency, and it never echoes a value. */
+/**
+ * Minimal .env reader. No dependency, and it never echoes a value.
+ *
+ * `process.env` ALWAYS wins and is ALWAYS merged, including when there is no
+ * .env file at all — which is the case in CI, where configuration arrives as
+ * repository secrets. An earlier version returned `{}` early when the file was
+ * missing, which silently ignored the environment and would have made the first
+ * keeper run on GitHub Actions report everything as unconfigured.
+ */
 export function loadEnv(path = '.env') {
-  if (!existsSync(path)) return {};
   const env = {};
-  for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eq = line.indexOf('=');
-    if (eq < 1) continue;
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
+  if (existsSync(path)) {
+    for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eq = line.indexOf('=');
+      if (eq < 1) continue;
+      const key = line.slice(0, eq).trim();
+      let value = line.slice(eq + 1).trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      env[key] = value;
     }
-    env[key] = value;
   }
   const merged = { ...env, ...process.env };
 
