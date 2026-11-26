@@ -3,7 +3,81 @@
 Decided 2026-11-25. Every number here was measured, not estimated — see
 `docs/VERIFIED-FACTS.md` for how each chain value was verified.
 
+## What the submission is
+
+**`contracts/Election.sol` is the contract.** It is built and tested with
+Foundry (38 tests) and deployed at
+`0x8a90db2f3f2192f94a1376c2b51f34f0628b1110` on EVM chain 9800.
+
+`legacy/Booth.sol` is the earlier iteration, kept because it is deployed and
+PROOF.md cites its transactions. It is **superseded** and not part of the
+submission. `probes/PqcProbe.sol` is deployed diagnostic evidence, not a
+product contract.
+
+### Why Booth.sol was retired
+
+Booth's `revealShare` put each trustee's **plaintext** Shamir share into
+contract storage and emitted it in an event. That was deliberate — it let
+anyone recompute the tally — but it destroys ballot secrecy permanently.
+Once k shares are on chain, anyone can recombine them, rebuild the election
+ML-KEM-1024 decapsulation key and decrypt every ballot; and because
+Booth's `BallotCast` indexes the voter address, every decrypted choice is
+linked to the voter who cast it. This was verified, not assumed: reading
+`getRevealedShares(2)` off chain returns the plaintext shares, two of them
+recombine to the 3,168-byte election secret key, and it matches the
+`electionKeyHash` the contract stored. **Election 2 on Booth has no ballot
+secrecy and cannot regain it.**
+
+Election.sol fixes this: trustees decrypt off chain and submit only **totals**.
+No share and no election key ever reaches the chain, so only the trustees can
+open a ballot, and only k of them colluding could deanonymise one.
+
+## Who can do what to a ballot
+
+### Nobody can forge a ballot
+
+In Election.sol a ballot is admitted only from an address on the allowlist,
+and the voter is taken from `msg.sender`. Casting a ballot therefore requires
+that voter's own secp256k1 key — which the admin, the trustees and any
+observer do not have. There is no relayer in the ballot path: each voter sends
+their own transaction. **No party can put a ballot in someone else's name.**
+
+### The admin can censor, at registration, in public
+
+What the admin *can* do is leave an eligible person off the allowlist, or
+choose the open and close times. Both are visible on chain: the allowlist is
+emitted as `VoterAllowed` events at creation and `isVoter()` is public, so
+exclusion is detectable by the excluded voter and by anyone auditing. The
+admin cannot add voters after the close, cannot vote for anyone, and cannot
+read a ballot — it holds no election key.
+
+The trustees can censor differently: by refusing to submit, they can stop a
+result appearing at all. They cannot fake one, because k of them must submit
+byte-identical totals and the same counted-ballot set. A single dissenter is
+refused with `TallyMismatch` once a result is final.
+
+### Every voter gets a receipt
+
+`castBallot` returns a ballot id, and the contract stores
+`keccak256(ciphertext)` against it. A voter keeps that id and the ciphertext
+they sealed, then checks inclusion at any time:
+
+```solidity
+ballotHash(electionId, ballotId) == keccak256(myCiphertext)   // my exact ballot is on chain
+hasVoted(electionId, myAddress)  == true                       // recorded against me
+```
+
+Both are public views, so a voter needs nothing but the chain to check, and
+the receipt reveals nothing: it is a hash of ciphertext. All five voters in
+election 5 verified inclusion this way.
+
+The honest limit: a receipt proves a ballot was **included**, not that it was
+**counted correctly** — the counting happens off chain in the trustees' hands.
+What constrains them is that k must agree on both the totals and the exact set
+of counted ballot ids, and that set is pinned on chain in the final result.
+
 ## The two constraints that shaped this
+
 
 1. **QoreSeal has no threshold primitive.** Sealing to 5 trustees produces a
    1-of-n envelope: each trustee opens the ballot alone (measured). So "enough
@@ -51,7 +125,39 @@ not help an attacker. The Q-Day screen can also seal in `mode: "mlkem"`
 (ML-KEM-1024 only) to show the pure post-quantum envelope side by side.
 *My call, not the user's — flagged for review.*
 
-## Ballot path: voter signs, relayer submits
+## Ballot path in Election.sol: the voter submits
+
+```
+Browser (client-side only)
+  encrypt ballot   QoreSeal -> election ML-KEM-1024 key (hybrid + X25519)
+        |
+        v
+The VOTER's own transaction on EVM 9800
+  (needs the voter's registered ML-DSA-87 key and a live EVM window)
+        |
+        v
+Election.sol
+  msg.sender on the allowlist?  -> else NotAVoter
+  already voted?                -> else AlreadyVoted
+  within [openAt, closeAt)?     -> else NotOpen
+  store keccak256(ciphertext), emit the ciphertext, return a ballot id
+
+After the close, off chain
+  each trustee opens its OWN sealed share with its ML-KEM-1024 key
+  k shares -> election key -> decrypt the ballots -> totals
+        |
+        v
+Election.sol  submitTally(totals, countedBallotIdsHash)
+  final only when k trustees submit byte-identical values
+```
+
+No relayer touches a ballot: `msg.sender` *is* the voter, so a ballot cannot be
+cast in anyone else's name. The cost is provisioning — every voter needs funding,
+a registered ML-DSA-87 key and an EVM authorisation window before they can vote.
+
+## Legacy (Booth.sol): voter signs, relayer submits
+
+*Superseded. Kept because Booth is deployed and PROOF.md cites it.*
 
 ```
 Browser (client-side only)

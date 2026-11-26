@@ -252,6 +252,50 @@ The 40 differing bytes were exactly the admin address in those windows.
 comparing. With them masked, the deployed `Election` matches its forge artifact
 exactly.
 
+## Two gas floors, not one
+
+Measured 2026-11-26 while running an election on Election.sol.
+
+A tight gas limit saves money (the charge is `max(real, limit/2)`), but the
+limit cannot go below the **EIP-7623 calldata floor**, which this chain
+enforces at broadcast:
+
+```
+insufficient gas for floor data gas cost: gas 90000, minimum needed 91830
+```
+
+The floor is `21000 + 10 x tokens`, where a zero calldata byte is 1 token and
+a non-zero byte is 4. For a ballot carrying ~1.7 KB of ciphertext the floor is
+about 92,000 gas, well above what the execution itself needs (~45,000). So for
+calldata-heavy calls **the floor, not `eth_estimateGas`, sets the minimum.**
+
+Booth sizes every limit as `max(estimate x 1.12, floor x 1.02)`.
+
+## EVM authorisation windows expire by BLOCK COUNT
+
+Measured 2026-11-26. A window opened with `blocks: 17280` (~4.9 hours at this
+testnet's ~1.03 s blocks) goes dead when the blocks run out, and the status
+then looks like this:
+
+```
+found=true  live=false  txs=23  value=11.534400 QOR  blocks=0
+```
+
+`remainingTxs` and `remainingValue` are still healthy; only `live` is false.
+**Testing `remainingTxs > 0` is therefore wrong — test `live`.** The chain
+refuses every EVM transaction from that account, and viem surfaces it as a
+bare `-32602 Missing or invalid parameters` from `eth_sendRawTransaction`,
+which looks nothing like a window problem. The real text is in the RPC
+`details` field:
+
+```
+failed to broadcast transaction: the EVM authorisation window for qor1... does
+not admit this transaction (remaining: 0 block...)
+```
+
+`classifyEvmWindowRejection(err)` from `@qorechain/evm/window` correctly
+returns `"exhausted"` for this. Use it rather than reading the message.
+
 ## Other node limits## Other node limits
 
 - `eth_getLogs` is capped at a **10,000-block** range: `fromBlock: 'earliest'`
@@ -354,8 +398,16 @@ Measured end-to-end, 3-of-5, with `@qorechain/qoreseal`:
 
 ## Open questions
 
-- qoreseal→qoresign version skew (0.1.0 vs 0.2.0): confirm a single resolved copy.
-- Explorer tx page confirmed as a route only; confirm rendering with a real hash
-  once Booth's first transaction lands.
-- Gas cost of a real ballot transaction, and whether a **contract** can
-  `staticcall` precompile `0x…0A01` (only a direct `eth_call` has been tested).
+- qoreseal 0.1.0 pins qoresign 0.1.0 while 0.2.0 is current; not yet confirmed
+  whether this resolves to a single copy.
+- Contract source verification: no API exists on this explorer (see above), so
+  reproducibility is the substitute.
+
+Settled since first written, kept here so the record is readable:
+
+- The PQC precompile IS callable from a deployed contract. The earlier
+  "unreachable" finding came from an `eth_call` state override and was wrong.
+- EVM gas is charged at `max(real, limit/2)`, not always half the limit.
+- The explorer `/tx/<hash>` route renders real hashes in both the native
+  (uppercase, no prefix) and EVM (`0x`, lowercase) conventions.
+- Real gas for every Booth and Election operation is measured above.
