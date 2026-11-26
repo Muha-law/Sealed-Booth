@@ -22,7 +22,7 @@
 import { open, sealKeysFromSeed, isQoreSealError, type SealKeyPair } from '@qorechain/qoreseal';
 import { pqVerify } from '@qorechain/qoresign';
 import { combine } from 'shamir-secret-sharing';
-import { keccak256, type Hex } from 'viem';
+import { hexToBytes, keccak256, type Hex } from 'viem';
 import { BALLOT_PLAINTEXT_VERSION, BALLOT_PURPOSE } from './constants.js';
 import { ballotAad, ballotCommitment, type ElectionRef } from './ballot.js';
 import { packElectionKey } from './electionKey.js';
@@ -133,7 +133,7 @@ export function tallyBallots(args: TallyArgs): TallyResult {
     // The post-quantum eligibility proof. This is the check the chain cannot do.
     const envelopeHash = keccak256(ballot.envelope);
     const commitment = ballotCommitment(args, keyHash, envelopeHash);
-    const commitmentBytes = Uint8Array.from(Buffer.from(commitment.slice(2), 'hex'));
+    const commitmentBytes = hexToBytes(commitment);
 
     if (!pqVerify(ballot.mldsaPublicKey, commitmentBytes, ballot.mldsaSignature)) {
       rejected.push({ voter: ballot.voter, reason: 'bad-mldsa-signature' });

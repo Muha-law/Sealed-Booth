@@ -1,0 +1,111 @@
+name: keeper
+
+# Keeps the demo election votable and republishes the site.
+#
+# An EVM authorisation window on qorechain-diana lasts at most 17,280 blocks,
+# which at the measured 1.427 s/block is 6 h 51 m. Judging runs 6-15 Dec, so
+# windows have to be reopened continuously or nobody can cast a demo ballot.
+#
+# This runs every 4 hours, well inside that cap, because GitHub's scheduler can
+# fire late under load. It is idempotent: a run that finds everything healthy
+# sends no transactions.
+#
+# Nothing is ever committed. The fresh pool.json is written into the Pages
+# artifact only, so git history stays frozen at the final human commit.
+
+on:
+  schedule:
+    # Every 4 hours. GitHub cron is best-effort and often late; the 6 h 51 m
+    # window cap leaves ~2 h 51 m of slack per cycle.
+    - cron: '0 */4 * * *'
+  workflow_dispatch: {}
+
+# Least privilege: read the repo, publish Pages. No write access to contents,
+# so this workflow cannot create a commit even by accident.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two keeper runs send transactions at once: they would race on
+# account sequence numbers. Queue instead of cancelling, so a run that is
+# mid-transaction is not killed.
+concurrency:
+  group: booth-keeper
+  cancel-in-progress: false
+
+jobs:
+  keep-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    env:
+      # Public configuration. Deliberately NOT secrets: both are on chain and
+      # the Vote page publishes them anyway.
+      ELECTION_CONTRACT_ADDRESS: '0xb7d52d7934c5c26a9a8fa623ce3669c5def336e2'
+      BOOTH_DEMO_ELECTION_ID: '2'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      # The keeper may fail loudly (for example when the relayer runs out of
+      # QOR). When it does we still want the site published, because the
+      # Results screen works without a live pool — but the run must go red.
+      - name: Keep the demo pool alive
+        id: keeper
+        continue-on-error: true
+        env:
+          BOOTH_RELAYER_MNEMONIC: ${{ secrets.BOOTH_RELAYER_MNEMONIC }}
+          BOOTH_INVITES_MNEMONIC: ${{ secrets.BOOTH_INVITES_MNEMONIC }}
+        run: node scripts/keeper.mjs
+
+      - name: Check pool.json exists and carries no master secret
+        run: |
+          if [ ! -f public/pool.json ]; then
+            echo "::warning::public/pool.json was not written; the Vote page will have no demo identity"
+            exit 0
+          fi
+          node -e "
+            const p = require('./public/pool.json');
+            if (!Array.isArray(p.invites)) { throw new Error('pool.json has no invites array'); }
+            // Belt and braces: the master mnemonic must never reach the artifact.
+            const text = require('fs').readFileSync('public/pool.json','utf8');
+            const master = process.env.BOOTH_INVITES_MNEMONIC || '';
+            if (master && text.includes(master.split(' ').slice(0,3).join(' '))) {
+              throw new Error('pool.json contains the master mnemonic — refusing to publish');
+            }
+            console.log('pool.json ok:', p.invites.length, 'live invite(s)');
+          "
+        env:
+          BOOTH_INVITES_MNEMONIC: ${{ secrets.BOOTH_INVITES_MNEMONIC }}
+
+      - name: Build the site
+        run: npm run build:site
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      # Surface a keeper failure after publishing, so the run is red and the
+      # reason is at the end of the log.
+      - name: Fail if the keeper reported a problem
+        if: steps.keeper.outcome == 'failure'
+        run: |
+          echo "::error::The keeper failed. The site was still published, but the demo"
+          echo "::error::pool may be empty. Scroll up to the 'Keep the demo pool alive' step."
+          exit 1

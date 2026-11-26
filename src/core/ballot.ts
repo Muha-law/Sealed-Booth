@@ -17,6 +17,7 @@ import { pqSign } from '@qorechain/qoresign';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
   encodeAbiParameters,
+  hexToBytes,
   keccak256,
   parseAbiParameters,
   stringToHex,
@@ -74,7 +75,8 @@ export function ballotAad(ref: ElectionRef): Uint8Array {
     ref.contract,
     ref.electionId,
   ]);
-  return Uint8Array.from(Buffer.from(hex.slice(2), 'hex'));
+  // hexToBytes, not Buffer: this module runs in the browser.
+  return hexToBytes(hex);
 }
 
 /**
@@ -127,7 +129,7 @@ export async function castBallot(args: BallotArgs): Promise<SealedBallot> {
   const mldsaKeyHash = keccak256(voter.mldsaPublicKey);
   const commitment = ballotCommitment(args, mldsaKeyHash, envelopeHash);
 
-  const commitmentBytes = Uint8Array.from(Buffer.from(commitment.slice(2), 'hex'));
+  const commitmentBytes = hexToBytes(commitment);
   const mldsaSignature = pqSign(voter.mldsaSecretKey, commitmentBytes);
 
   // personal_sign over the raw 32 bytes: exactly what Booth._ethSigned rebuilds.

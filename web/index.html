@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Booth — a secret ballot that stays secret after Q-Day</title>
+    <meta
+      name="description"
+      content="Ballots encrypted in the browser with ML-KEM-1024 and sealed to a trustee panel on QoreChain."
+    />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Booth</h1>
+      <p class="tagline">A secret ballot that stays secret after Q-Day.</p>
+      <nav id="nav" aria-label="Screens"></nav>
+    </header>
+
+    <main id="screen" aria-live="polite">
+      <p class="loading">Reading the chain…</p>
+    </main>
+
+    <footer>
+      <p>
+        QoreChain testnet <code>qorechain-diana</code>, EVM chain id 9800. Testnet
+        only — nothing here has value.
+      </p>
+      <p id="chain-status" class="muted"></p>
+    </footer>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

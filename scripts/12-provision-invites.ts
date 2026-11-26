@@ -15,7 +15,7 @@
  * Vote page for the live pool, so they are public by design — each is good for
  * exactly one ballot, and holds only a few cents of worthless testnet QOR.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { keccak256, toHex, type Abi, type Hex } from 'viem';

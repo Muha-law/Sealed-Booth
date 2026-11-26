@@ -89,11 +89,18 @@ export const VOTER_ENV_KEYS = [
  * keys do, for the few invites currently in the live pool, and those are
  * deliberately public single-use demo credentials — see docs/ARCHITECTURE.md.
  */
+/** How many invites the one-time provisioning script sets up. */
 export const INVITE_COUNT = 30;
 
+/**
+ * Hard ceiling on derivable invite indices. The keeper provisions beyond
+ * INVITE_COUNT as earlier invites are used up, so this is the real bound.
+ */
+export const INVITE_MAX = 200;
+
 export function inviteAccount(masterMnemonic, index) {
-  if (!Number.isInteger(index) || index < 0 || index >= INVITE_COUNT) {
-    throw new Error(`invite index must be 0..${INVITE_COUNT - 1}, got ${index}`);
+  if (!Number.isInteger(index) || index < 0 || index >= INVITE_MAX) {
+    throw new Error(`invite index must be 0..${INVITE_MAX - 1}, got ${index}`);
   }
   return boothAccount(masterMnemonic, index);
 }

@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { generateMnemonic } from '@qorechain/sdk';
 
 // @ts-expect-error - .mjs helper, no type declarations
-import { boothAccount, inviteAccount, INVITE_COUNT } from '../scripts/lib/accounts.mjs';
+import { boothAccount, inviteAccount, INVITE_COUNT, INVITE_MAX } from '../scripts/lib/accounts.mjs';
 // @ts-expect-error - .mjs helper, no type declarations
 import { unifiedAccount } from '../scripts/lib/chain.mjs';
 
@@ -46,9 +46,18 @@ describe('HD derivation agreement', () => {
     expect(addresses.size).toBe(INVITE_COUNT);
   }, 60_000);
 
-  it('refuses an index outside the invite pool', () => {
+  it('allows indices past the initial batch, so the keeper can top up', () => {
     const mnemonic = generateMnemonic();
-    expect(() => inviteAccount(mnemonic, INVITE_COUNT)).toThrow(/invite index must be/);
+    // INVITE_COUNT is only what the one-time script provisions; the keeper
+    // provisions beyond it with addVoters as invites are used up.
+    expect(INVITE_MAX).toBeGreaterThan(INVITE_COUNT);
+    expect(() => inviteAccount(mnemonic, INVITE_COUNT)).not.toThrow();
+    expect(() => inviteAccount(mnemonic, INVITE_MAX - 1)).not.toThrow();
+  });
+
+  it('refuses an index outside the derivable range', () => {
+    const mnemonic = generateMnemonic();
+    expect(() => inviteAccount(mnemonic, INVITE_MAX)).toThrow(/invite index must be/);
     expect(() => inviteAccount(mnemonic, -1)).toThrow(/invite index must be/);
   });
 
