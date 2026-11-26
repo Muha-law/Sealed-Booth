@@ -248,3 +248,83 @@ Three things it found by not trusting its own numbers:
   keeping: the measurement election 3 is left open and empty, election 1 is an
   orphan from my own argument bug (annotated in PROOF.md), and the frontend
   still does not exist.
+
+---
+
+## 2026-11-26 — Task 5: Election.sol with Foundry, and the repo
+
+**What I asked**
+
+Write the election contract in Solidity with Foundry in contracts/ — question,
+2 to 6 options, voter allowlist, trustees with registered encryption key
+references, threshold k, open/close times, election public key, sealed shares.
+createElection by admin; castBallot (allowlist, while open, once, store hash,
+emit ciphertext, return ballot id); submitTally (trustees, after close, final
+only when k agree); views; the named errors; tests for every rule. Deploy
+through an EVM window, verify if the explorer supports it, log it in PROOF.md.
+
+Then: set the GitHub repo as origin, check .gitignore, scan for secrets, commit
+in small logical commits and push to main.
+
+**What the AI generated**
+
+- Installed Foundry 1.10.0 (it was not present) and set up `foundry.toml` with
+  the compiler and EVM version pinned, forge tests in `test/solidity` so they
+  do not collide with the existing vitest suite, and forge-std as a submodule.
+- `contracts/Election.sol`, 7,187 bytes runtime. Bulk bytes (ciphertexts, the
+  election key, sealed shares) go in events with only commitments stored, per
+  the gas measurements. A trustee's encryption key is referenced by the
+  keccak256 of its registered ML-KEM-1024 key rather than stored.
+- `submitTally` counts agreement: a result is final only when k trustees submit
+  identical totals AND the same counted-ballot set. Disagreement yields no
+  result rather than a disputed one, and contradicting a final result reverts
+  `TallyMismatch`.
+- 38 forge tests, all passing, including the four named cases and three fuzz
+  properties. The existing 27 vitest tests still pass.
+- Deployed to qorechain-diana at `0x8a90db2f3f2192f94a1376c2b51f34f0628b1110`
+  through the relayer's EVM window.
+- Caught its own false alarm: the deployed runtime did not match the artifact,
+  because Solidity patches `immutable` values in at deployment. It read
+  `immutableReferences`, confirmed the 40 differing bytes were exactly the admin
+  address in its two 32-byte windows, and added a masking comparison.
+- Refined its own gas finding again: EVM gas is `max(real, limit/2)`, a
+  50%-of-limit floor, not a flat halving. The Election deployment proved it —
+  its real cost exceeded the floor and the receipt then reported the truth.
+- Established that contract verification is **not possible** on this explorer
+  (Blockscout, Etherscan-style and Sourcify all unavailable for chain 9800) and
+  recorded reproducibility instead.
+- Ten logical commits, origin set, secrets scanned: no mnemonic, key or share
+  file is tracked, and it compared every staged file against the nine real
+  mnemonics in .env to prove no leak.
+
+**What I changed or decided myself**
+
+- *(open)* The push failed: the authenticated GitHub account has READ only on
+  `Muha-law/Sealed-Booth`. I need to authenticate as the repo owner or grant
+  write access before it can land.
+- *(open)* Election.sol and Booth.sol now both exist and model the tally
+  differently. Mine to decide which one the submission presents.
+
+**Decided by the AI, flagged for my review**
+
+- Kept Booth.sol rather than replacing it, since it is deployed and PROOF.md
+  cites it. Election.sol is additive.
+- Added named errors beyond the six I listed (NotAdmin, BadOptionCount,
+  BadThreshold, BadWindow, LengthMismatch, EmptyCiphertext, AlreadySubmitted,
+  DuplicateTrustee, ZeroAddress, NotFinalized) so every refusal says why.
+- Deployed with a viem script rather than `forge create`, because the latter
+  takes the private key as a command-line argument and would put it in the
+  process table.
+- `finalResult` reverts `NotFinalized` before k agree, with a non-reverting
+  `resultStatus` alongside it for a UI.
+
+**Could not verify**
+
+- The push. Blocked on repo permissions; the real 403 is in my notes.
+- Contract verification on the explorer — no API exists.
+- Election.sol has not been exercised on chain beyond deployment reads
+  (`admin()`, `electionCount()`, a `NoSuchElection` revert). Its rules are
+  covered by the 38 forge tests, not yet by a live election.
+- **There is no RECON.md in this repo.** I referred to it three times; the AI
+  mapped it to `docs/VERIFIED-FACTS.md`, which holds the recon it was pointing
+  at, and flagged the mismatch rather than inventing a file.
