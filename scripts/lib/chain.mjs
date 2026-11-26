@@ -82,8 +82,14 @@ export async function feeFor(gas) {
   return { amount: [{ denom: 'uqor', amount: amount.toString() }], gas: String(gas) };
 }
 
-export async function unifiedAccount(mnemonic) {
-  return deriveUnifiedAccount(mnemonic);
+/**
+ * `index` is the HD account index on m/44'/60'/0'/0/{index}. It must agree with
+ * `boothAccount(mnemonic, index)` in accounts.mjs, which derives the same path
+ * through QoreSign; a test asserts they match.
+ */
+export async function unifiedAccount(mnemonic, index = 0) {
+  // deriveUnifiedAccount takes a bare index, not a DerivationOptions object.
+  return deriveUnifiedAccount(mnemonic, index);
 }
 
 /**

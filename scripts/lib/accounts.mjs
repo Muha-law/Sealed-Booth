@@ -77,3 +77,23 @@ export const VOTER_ENV_KEYS = [
   'BOOTH_VOTER_4_MNEMONIC',
   'BOOTH_VOTER_5_MNEMONIC',
 ];
+
+/**
+ * Demo invite accounts, all derived from ONE master mnemonic by HD index.
+ *
+ * Why one master: a window can only be opened by the account that owns it, so
+ * the keeper must sign as each invite. Deriving them keeps that to a single
+ * GitHub Actions secret instead of thirty.
+ *
+ * The master itself NEVER reaches the browser. Only individual derived private
+ * keys do, for the few invites currently in the live pool, and those are
+ * deliberately public single-use demo credentials — see docs/ARCHITECTURE.md.
+ */
+export const INVITE_COUNT = 30;
+
+export function inviteAccount(masterMnemonic, index) {
+  if (!Number.isInteger(index) || index < 0 || index >= INVITE_COUNT) {
+    throw new Error(`invite index must be 0..${INVITE_COUNT - 1}, got ${index}`);
+  }
+  return boothAccount(masterMnemonic, index);
+}
