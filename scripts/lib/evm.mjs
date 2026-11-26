@@ -54,6 +54,12 @@ export async function ensureWindow(unified, { txs, gasEach, blocks = 17_280 }) {
   const needed = perTx * BigInt(txs);
 
   const current = await windowStatus(unified.cosmos);
+  // `live` is the only safe test. A window that has run out of BLOCKS still
+  // reports remainingTxs and remainingValue above zero, and the chain then
+  // refuses every transaction with a bare -32602 from eth_sendRawTransaction.
+  if (current.found && !current.live) {
+    console.log(`  previous window expired (${current.remainingTxs} txs, ${current.remainingBlocks} blocks left) — reopening`);
+  }
   if (current.live && BigInt(current.remainingTxs) >= BigInt(txs) && BigInt(current.remainingValue) >= needed) {
     console.log(
       `  window already live: ${current.remainingTxs} txs, ` +

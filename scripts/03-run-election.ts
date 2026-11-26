@@ -30,7 +30,7 @@ import { publicClient, walletClient, receipt, maxFeePerGas } from './lib/evm.mjs
 import { recordProof } from './lib/proof.mjs';
 
 import { setUpElection } from '../src/core/election.js';
-import { voterFromMnemonic } from '../src/core/identity.js';
+import { voterFromMnemonic, type VoterIdentity } from '../src/core/identity.js';
 import { castBallot, type ElectionRef } from '../src/core/ballot.js';
 import { recoverElectionKeys, tallyBallots, type OnChainBallot } from '../src/core/tally.js';
 import { SHARE_PURPOSE } from '../src/core/constants.js';
@@ -146,7 +146,9 @@ const ref: ElectionRef = { evmChainId: NETWORK.evmChainId, contract: CONTRACT, e
 // ---------------------------------------------------------------- roll
 
 console.log('\n--- register voters ---');
-const voters = VOTER_ENV_KEYS.map((k: string) => voterFromMnemonic(requireEnv(env, k)));
+const voters: VoterIdentity[] = (VOTER_ENV_KEYS as string[]).map((k) =>
+  voterFromMnemonic(requireEnv(env, k)),
+);
 const registered = await send(
   'registerVoters',
   [electionId, voters.map((v) => v.evmAddress), voters.map((v) => keccak256(v.mldsaPublicKey))],

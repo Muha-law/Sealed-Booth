@@ -1,10 +1,11 @@
 /**
  * True EVM execution gas for each Booth operation.
  *
- * Receipts on this chain's EVM lane report `gasUsed` as exactly half the gas
- * LIMIT, whatever the work (proved in scripts/04-gas-check.ts). The native lane
- * reports real gas. So for EVM figures the honest source is `eth_estimateGas`,
- * which actually executes the call.
+ * This chain's EVM lane charges `max(real gas, gasLimit / 2)` — a 50%-of-limit
+ * floor, established in scripts/04-gas-check.ts and refined when the Election
+ * deployment exceeded the floor and the receipt then reported the true figure.
+ * The native lane has no such floor. So for EVM figures the honest source is
+ * `eth_estimateGas`, which actually executes the call.
  *
  * This opens one measurement election so `castBallot` can be estimated against
  * a voter who has not yet voted, then estimates every operation. Only the two
@@ -28,7 +29,7 @@ import { unifiedAccount } from './lib/chain.mjs';
 // @ts-expect-error - .mjs helper
 import { publicClient, walletClient, receipt, maxFeePerGas } from './lib/evm.mjs';
 import { setUpElection } from '../src/core/election.js';
-import { voterFromMnemonic } from '../src/core/identity.js';
+import { voterFromMnemonic, type VoterIdentity } from '../src/core/identity.js';
 import { castBallot } from '../src/core/ballot.js';
 
 const env = loadEnv();
@@ -100,7 +101,9 @@ const electionId = (await client.readContract({
 })) as bigint;
 console.log(`  measurement election is ${electionId}`);
 
-const voters = VOTER_ENV_KEYS.map((k: string) => voterFromMnemonic(requireEnv(env, k)));
+const voters: VoterIdentity[] = (VOTER_ENV_KEYS as string[]).map((k) =>
+  voterFromMnemonic(requireEnv(env, k)),
+);
 const rollArgs = [
   electionId,
   voters.map((v) => v.evmAddress),

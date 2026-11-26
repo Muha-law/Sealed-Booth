@@ -22,15 +22,8 @@ import type { Abi, Hex } from 'viem';
 import { loadEnv, NETWORK, requireEnv, formatQor } from './lib/env.mjs';
 // @ts-expect-error - .mjs helper
 import { unifiedAccount } from './lib/chain.mjs';
-// @ts-expect-error - .mjs helper
-import {
-  ensureWindow,
-  publicClient,
-  walletClient,
-  receipt,
-  maxFeePerGas,
-  runtimeMatches,
-} from './lib/evm.mjs';
+// @ts-expect-error - .mjs helper, no type declarations
+import { ensureWindow, publicClient, walletClient, receipt, maxFeePerGas, runtimeMatches } from './lib/evm.mjs';
 // @ts-expect-error - .mjs helper
 import { recordProof } from './lib/proof.mjs';
 
