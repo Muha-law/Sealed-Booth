@@ -1,4 +1,9 @@
-// Compile contracts/*.sol with solc and write artifacts to build/.
+// Compile the NON-submission Solidity with solc-js into build/.
+//
+// contracts/Election.sol is the submission and is built by Foundry (`forge
+// build` -> out/). This pipeline covers what Foundry does not: legacy/ (the
+// superseded Booth contract, kept so its tests and the historical run scripts
+// still work) and probes/ (deployed diagnostic evidence).
 // evmVersion is pinned to "paris": QoreChain's EVM support for PUSH0 and
 // transient storage has not been verified, so Booth avoids needing either.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
@@ -7,12 +12,15 @@ import { fileURLToPath } from 'node:url';
 import solc from 'solc';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const contractsDir = join(root, 'contracts');
 const outDir = join(root, 'build');
+const sourceDirs = ['legacy', 'probes'];
 
 const sources = {};
-for (const f of readdirSync(contractsDir).filter((f) => f.endsWith('.sol'))) {
-  sources[f] = { content: readFileSync(join(contractsDir, f), 'utf8') };
+for (const dir of sourceDirs) {
+  for (const f of readdirSync(join(root, dir)).filter((n) => n.endsWith('.sol'))) {
+    // Keyed by bare filename so `import "./Booth.sol"` still resolves.
+    sources[f] = { content: readFileSync(join(root, dir, f), 'utf8') };
+  }
 }
 
 const input = {
