@@ -1,15 +1,23 @@
 /**
- * Opening the ballots, in the browser, after voting closed.
+ * Opening the ballots, in a trustee's browser, after voting closed.
  *
- * k trustees reveal their share on chain; anyone recombines them, rebuilds the
- * election key and counts. Nothing here is privileged — a voter, an observer or
- * a journalist runs exactly this code over exactly the same public data and
- * must get the same numbers.
+ * This runs for a TRUSTEE, not for the public. No share ever goes on chain in
+ * readable form: each trustee opens its own sealed share with its own
+ * ML-KEM-1024 key, re-seals it to the other trustees' registered keys, and a
+ * trustee holding k of them recombines the seed here and counts.
+ *
+ * So the tally is reproducible by any trustee who gathers k shares — not by an
+ * outside observer, who sees only ciphertext and the totals k trustees agreed
+ * on. That is the deliberate trade against Booth v1, which published plaintext
+ * shares and so destroyed ballot secrecy; see docs/ARCHITECTURE.md.
+ *
+ * The flip side, stated plainly: any trustee who collects k shares can open
+ * every ballot, and because the ballot events carry the voter's address, it can
+ * see who voted what.
  *
  * A ballot is counted only if its ML-DSA-87 signature verifies against the key
- * registered for that voter. The contract could not check that (its PQC
- * precompile is unreachable from contract code), so the tally does, and says
- * out loud which ballots it rejected and why.
+ * registered for that voter, and the rejection list says which ballots were
+ * discarded and why.
  */
 import { open, sealKeysFromSeed, isQoreSealError, type SealKeyPair } from '@qorechain/qoreseal';
 import { pqVerify } from '@qorechain/qoresign';
@@ -53,7 +61,8 @@ export interface TallyResult {
 }
 
 /**
- * Recombine k revealed shares into the election key pair.
+ * Recombine k shares into the election key pair. The shares come from each
+ * trustee opening what was released to it, never from the chain in plaintext.
  *
  * @param expectedElectionKeyHash keccak256 of the election key blob as stored
  *        on chain. Checked, so a wrong or tampered share set is caught here

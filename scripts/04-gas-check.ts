@@ -1,4 +1,9 @@
 /**
+ * LEGACY (Booth v1). Operates on legacy/Booth.sol, whose `revealShare`
+ * published plaintext shares on chain. Kept because it produced PROOF.md rows
+ * that are cited; it is NOT the current path. Election.sol keeps shares off
+ * chain — see docs/ARCHITECTURE.md.
+ *
  * Every receipt in the run above reported gasUsed as exactly half the gas
  * limit. That pattern says the figure is not execution gas, so this measures
  * what is actually consumed before PROOF.md claims anything.

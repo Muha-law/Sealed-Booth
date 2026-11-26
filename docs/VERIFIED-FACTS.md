@@ -252,6 +252,52 @@ The 40 differing bytes were exactly the admin address in those windows.
 comparing. With them masked, the deployed `Election` matches its forge artifact
 exactly.
 
+## What a browser page can reach (CORS)
+
+Measured 2026-11-26 with an `Origin:` header on each endpoint.
+
+| Endpoint | `Access-Control-Allow-Origin` | Preflight (OPTIONS) | Usable from a browser page? |
+|---|---|---|---|
+| `https://evm-testnet.qore.host` (EVM RPC) | `*` | 204, allows POST + content-type | **yes** |
+| `https://api-testnet.qore.host` (REST/LCD) | **none** | 501 Not Implemented | **no** |
+| `https://rpc-testnet.qore.host` (Tendermint) | **none** | 200 but no CORS headers | **no** |
+
+Full headers were dumped, not just grepped: the REST and Tendermint responses
+carry no `access-control-*` header of any kind (both sit behind Cloudflare and
+return only `cf-ray`, `x-cosmos-block-height`, etc.).
+
+**Consequences for any browser UI:**
+
+- A page CAN read the chain and send EVM transactions (so `castBallot` works
+  entirely in the browser).
+- A page CANNOT read the REST API, so it cannot look up the KEM registry, an
+  ML-DSA-87 key status, or an EVM window status directly.
+- A page CANNOT broadcast a native-lane transaction, so it cannot register a
+  PQC key and **cannot open its own EVM authorisation window**.
+
+Anything on the native lane therefore needs either a server-side relay of
+already-signed bytes, or pre-provisioning by the admin. Signing and encryption
+can still happen entirely in the browser; only the broadcast cannot.
+
+## EVM authorisation window: maximum length
+
+Measured 2026-11-26.
+
+| | |
+|---|---|
+| `MAX_EVM_WINDOW_BLOCKS` | **17,280** (hard cap in `@qorechain/evm/window`) |
+| `MAX_EVM_WINDOW_TXS` | 1,000 |
+| `MAX_EVM_WINDOW_TARGETS` | 16 |
+| measured block time | **1.427 s** (identical over 1,000 / 5,000 / 20,000-block spans) |
+| **longest possible window** | **17,280 x 1.427 s = 24,659 s = 6 h 51 m = 0.285 days** |
+
+The SDK README's "17,280 is roughly 5 hours (~1.03 s blocks)" understates it:
+this testnet is currently running at 1.427 s/block, so the cap is closer to
+seven hours. Either way **a window cannot be opened for more than a third of a
+day**, and the chain exposes no parameter to extend it
+(`/qorechain/evm/v1/params` and `/qorechain/pqc/v1/evm_window_params` both
+return 501).
+
 ## Two gas floors, not one
 
 Measured 2026-11-26 while running an election on Election.sol.

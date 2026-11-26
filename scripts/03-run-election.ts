@@ -1,4 +1,9 @@
 /**
+ * LEGACY (Booth v1). Operates on legacy/Booth.sol, whose `revealShare`
+ * published plaintext shares on chain. Kept because it produced PROOF.md rows
+ * that are cited; it is NOT the current path. Election.sol keeps shares off
+ * chain — see docs/ARCHITECTURE.md.
+ *
  * Step 3: one whole election on qorechain-diana.
  *
  *   create -> register voters -> 5 ballots -> refused double vote

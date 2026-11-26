@@ -4,7 +4,9 @@
  *
  * The critical property: this module never returns the election key or its
  * seed. The creator cannot decrypt a single ballot, by construction — the only
- * way back to the key is k trustees revealing their shares after voting closes.
+ * way back to the key is k trustees each opening their own share after voting
+ * closes and combining them off chain. No share is ever published in readable
+ * form.
  */
 import {
   generateSealKeys,
@@ -24,7 +26,7 @@ export interface ElectionSetupArgs {
   chainId: string;
   /** One recipient per trustee, in the order they will be indexed on chain. */
   trustees: SealRecipient[];
-  /** k: how many trustees must reveal before the ballots can be opened. */
+  /** k: how many trustees must take part before the ballots can be opened. */
   threshold: number;
 }
 
