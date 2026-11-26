@@ -148,6 +148,8 @@ contract Election {
     error EmptyCiphertext();
     error AlreadySubmitted();
     error AlreadyReleased();
+    /// Voting has closed, so the roll can no longer change.
+    error VotingClosed();
     error DuplicateTrustee();
     error ZeroAddress();
     error NotFinalized();
@@ -256,6 +258,34 @@ contract Election {
         );
     }
 
+    /// @notice Add voters to an open election's allowlist. Admin only.
+    ///
+    /// @dev Exists so a long-running demo election can be topped up with freshly
+    ///      provisioned voters as earlier ones are used, without closing it.
+    ///      Idempotent per address: re-adding someone already on the roll is a
+    ///      no-op and does not inflate `voterCount`.
+    ///
+    ///      This widens admin power — the admin can enlarge the electorate
+    ///      mid-election. It is public (`VoterAllowed` events, `isVoter`), so it
+    ///      is detectable, but it is not prevented. Stated in the README.
+    function addVoters(uint256 electionId, address[] calldata voters)
+        external
+        onlyAdmin
+        electionExists(electionId)
+    {
+        ElectionData storage e = _elections[electionId];
+        if (block.timestamp >= e.closeAt) revert VotingClosed();
+
+        for (uint256 i = 0; i < voters.length; ++i) {
+            address voter = voters[i];
+            if (voter == address(0)) revert ZeroAddress();
+            if (isVoter[electionId][voter]) continue; // already on the roll
+            isVoter[electionId][voter] = true;
+            e.voterCount++;
+            emit VoterAllowed(electionId, voter);
+        }
+    }
+
     /// @notice Cast one sealed ballot. Allowlist only, while open, once each.
     /// @return ballotId This ballot's id within the election, from 1.
     function castBallot(uint256 electionId, bytes calldata ciphertext)
@@ -273,11 +303,11 @@ contract Election {
         hasVoted[electionId][msg.sender] = true;
         ballotId = ++e.ballotCount;
 
-        bytes32 ballotHash = keccak256(ciphertext);
-        _ballotHash[electionId][ballotId] = ballotHash;
+        bytes32 hash = keccak256(ciphertext);
+        _ballotHash[electionId][ballotId] = hash;
         ballotVoter[electionId][ballotId] = msg.sender;
 
-        emit BallotCast(electionId, ballotId, msg.sender, ballotHash, ciphertext);
+        emit BallotCast(electionId, ballotId, msg.sender, hash, ciphertext);
     }
 
     /// @notice A trustee hands its share to the rest of the panel, so trustees

@@ -632,6 +632,149 @@ contract ElectionTest is Test {
         assertEq(agreements, 1);
     }
 
+    // ------------------------------------------------------------- addVoters
+
+    address internal late1 = makeAddr("late1");
+    address internal late2 = makeAddr("late2");
+
+    function _one(address a) internal pure returns (address[] memory v) {
+        v = new address[](1);
+        v[0] = a;
+    }
+
+    function test_admin_adds_voters_to_an_open_election() public {
+        uint256 id = _create();
+        assertEq(election.getElection(id).voterCount, 3);
+        assertFalse(election.isVoter(id, late1));
+
+        address[] memory add = new address[](2);
+        add[0] = late1;
+        add[1] = late2;
+
+        vm.prank(admin);
+        election.addVoters(id, add);
+
+        assertTrue(election.isVoter(id, late1));
+        assertTrue(election.isVoter(id, late2));
+        assertEq(election.getElection(id).voterCount, 5);
+    }
+
+    function test_added_voter_can_cast_and_be_counted() public {
+        uint256 id = _create();
+        vm.prank(admin);
+        election.addVoters(id, _one(late1));
+
+        _openVoting();
+        vm.prank(late1);
+        uint256 ballotId = election.castBallot(id, CIPHERTEXT);
+
+        assertEq(ballotId, 1);
+        assertTrue(election.hasVoted(id, late1));
+        assertEq(election.ballotHash(id, ballotId), keccak256(CIPHERTEXT));
+        assertEq(election.getElection(id).ballotCount, 1);
+
+        // And the tally that follows includes it.
+        _closeVoting();
+        bytes32 counted = keccak256("ballots");
+        vm.prank(trustee1);
+        election.submitTally(id, _totals(1, 0, 0), counted);
+        vm.prank(trustee2);
+        election.submitTally(id, _totals(1, 0, 0), counted);
+        (uint256[] memory totals,,) = election.finalResult(id);
+        assertEq(totals[0], 1);
+    }
+
+    function test_addVoters_emits_VoterAllowed() public {
+        uint256 id = _create();
+
+        vm.expectEmit(true, true, true, true, address(election));
+        emit Election.VoterAllowed(id, late1);
+
+        vm.prank(admin);
+        election.addVoters(id, _one(late1));
+    }
+
+    function test_only_admin_can_add_voters() public {
+        uint256 id = _create();
+
+        vm.prank(stranger);
+        vm.expectRevert(Election.NotAdmin.selector);
+        election.addVoters(id, _one(late1));
+
+        // Not even a trustee or an existing voter.
+        vm.prank(trustee1);
+        vm.expectRevert(Election.NotAdmin.selector);
+        election.addVoters(id, _one(late1));
+
+        vm.prank(voterA);
+        vm.expectRevert(Election.NotAdmin.selector);
+        election.addVoters(id, _one(late1));
+
+        assertFalse(election.isVoter(id, late1));
+    }
+
+    function test_cannot_add_voters_after_close() public {
+        uint256 id = _create();
+        _closeVoting();
+
+        vm.prank(admin);
+        vm.expectRevert(Election.VotingClosed.selector);
+        election.addVoters(id, _one(late1));
+
+        assertFalse(election.isVoter(id, late1));
+    }
+
+    function test_addVoters_rejects_the_zero_address() public {
+        uint256 id = _create();
+
+        vm.prank(admin);
+        vm.expectRevert(Election.ZeroAddress.selector);
+        election.addVoters(id, _one(address(0)));
+    }
+
+    function test_adding_an_existing_voter_is_a_no_op() public {
+        uint256 id = _create();
+        assertEq(election.getElection(id).voterCount, 3);
+
+        // voterA is already on the roll from createElection.
+        vm.prank(admin);
+        election.addVoters(id, _one(voterA));
+        assertEq(election.getElection(id).voterCount, 3);
+        assertTrue(election.isVoter(id, voterA));
+
+        // A batch mixing old and new counts only the new one.
+        address[] memory mixed = new address[](3);
+        mixed[0] = voterA;
+        mixed[1] = late1;
+        mixed[2] = late1; // duplicated within the batch too
+        vm.prank(admin);
+        election.addVoters(id, mixed);
+        assertEq(election.getElection(id).voterCount, 4);
+    }
+
+    function test_addVoters_on_unknown_election_reverts() public {
+        vm.prank(admin);
+        vm.expectRevert(Election.NoSuchElection.selector);
+        election.addVoters(42, _one(late1));
+    }
+
+    function test_addVoters_does_not_grant_a_second_vote() public {
+        uint256 id = _create();
+        _openVoting();
+
+        vm.prank(voterA);
+        election.castBallot(id, CIPHERTEXT);
+
+        // Re-adding a voter who has already voted must not reset hasVoted.
+        vm.prank(admin);
+        election.addVoters(id, _one(voterA));
+
+        vm.prank(voterA);
+        vm.expectRevert(Election.AlreadyVoted.selector);
+        election.castBallot(id, hex"ffff");
+        assertEq(election.getElection(id).ballotCount, 1);
+    }
+
     // ---------------------------------------------------------- releaseShare
 
     /// One envelope per trustee, as releaseShare requires.
