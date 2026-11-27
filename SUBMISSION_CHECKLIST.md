@@ -26,8 +26,7 @@ confirm it.
   this.
 - [x] **AI_USAGE.md present.** It has a summary for judges (workflow, what was
   generated, what you decided, the bugs Claude Code caught in its own work) and
-  the full task log. **One placeholder is left for you:** the reason AgentVault
-  was dropped.
+  the full task log. No placeholders left.
 
 ## Testnet addresses
 

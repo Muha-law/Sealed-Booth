@@ -41,8 +41,17 @@ entry last.
 
 - **The idea.** A secret ballot whose secrecy has to outlive the cryptography
   protecting it: harvest now, decrypt later, applied to votes.
-- **Killing AgentVault.** I dropped my earlier project, AgentVault, and built
-  Booth instead. *(your words: why AgentVault was dropped)*
+- **Killing AgentVault.** I started with AgentVault, an AI payments agent whose
+  spending limits are enforced on chain. Before writing any code, I checked the
+  live project list. The Post-Quantum AI Agents category already had more than
+  20 entries with the same pitch (QoreBills, Invoice Leash, Steward, several
+  called Leash), competing for 2 prizes. I then looked at Cross-VM, the least
+  crowded category, and found its Native side only allows three
+  governance-approved contracts, so the ideas I had for it couldn't be built.
+  Encrypted Apps was crowded too, but nobody had built voting, and a secret
+  ballot has the clearest reason to need post-quantum encryption: a vote has to
+  stay secret for life, and harvest-now-decrypt-later is a direct threat to it.
+  So I switched to Booth.
 - **The reveal fix.** Booth.sol had trustees publish plaintext shares on chain.
   When the AI proved from chain data that this made Booth.sol election 2
   permanently readable (Task 6), I retired Booth.sol and kept it on chain as
@@ -806,7 +815,7 @@ matches the SPDX headers. No contract or crypto-core changes.
 
 **What I changed or decided myself**
 
-- *(your words: the AgentVault reason, in the summary above)*
+- Wrote the AgentVault reasoning into the summary above (*Killing AgentVault*).
 
 **Could not verify**
 
