@@ -1,0 +1,48 @@
+name: test
+
+# Every check a reviewer would run by hand: the Solidity suite, the TypeScript
+# suite and the typecheck. No secrets: nothing here signs or sends a transaction.
+#
+# The vitest suite includes test/contract.test.ts, which runs the legacy Booth
+# contract on the real QoreChain testnet EVM through an eth_call state override.
+# It reads the public RPC and spends nothing. If the testnet is down it fails
+# rather than passing quietly, which is intended.
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # forge-std is a submodule.
+          submodules: recursive
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # The version every result in PROOF.md was produced with.
+          version: v1.10.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Solidity tests (forge)
+        run: forge test
+
+      - name: TypeScript tests (vitest)
+        # Compiles the legacy contracts with solc-js into build/, then runs vitest.
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
