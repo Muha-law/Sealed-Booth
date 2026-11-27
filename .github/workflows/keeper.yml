@@ -48,13 +48,16 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy_retry.outputs.page_url }}
 
     env:
       # Public configuration. Deliberately NOT secrets: both are on chain and
       # the Vote page publishes them anyway.
       ELECTION_CONTRACT_ADDRESS: '0xb7d52d7934c5c26a9a8fa623ce3669c5def336e2'
       BOOTH_DEMO_ELECTION_ID: '2'
+      # The transaction that created it. The keeper reads the election key from
+      # this receipt, because eth_getLogs here only reaches 10,000 blocks back.
+      BOOTH_DEMO_ELECTION_TX: '0x3216c2d214ef3337f0a97a2343535055a7b6ee9b998f4869e25b2af3a4bea860'
 
     steps:
       - uses: actions/checkout@v4
@@ -107,7 +110,20 @@ jobs:
         with:
           path: dist
 
+      # deploy-pages can look for the artifact a moment before GitHub has
+      # indexed it, and fail with "No artifacts named github-pages were found"
+      # although the upload above finalized (seen on the 2026-11-27 05:34 run).
+      # One delayed retry absorbs that; a second failure fails the run.
       - id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Wait before retrying the deploy
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 30
+
+      - id: deploy_retry
+        if: steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v4
 
       # Surface a keeper failure after publishing, so the run is red and the

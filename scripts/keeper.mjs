@@ -25,7 +25,7 @@ import { evmWindowStatus, evmWindowCost } from '@qorechain/evm/window';
 import { qorechainTestnet } from '@qorechain/evm';
 import { fetchPqcStatus, msg } from '@qorechain/sdk';
 import { buildRegisterPqKeyMessage } from '@qorechain/qoresign';
-import { decodeEventLog } from 'viem';
+import { decodeEventLog, keccak256 } from 'viem';
 import { loadEnv, NETWORK, formatQor } from './lib/env.mjs';
 import { inviteAccount, INVITE_MAX } from './lib/accounts.mjs';
 import { walletClient, maxFeePerGas } from './lib/evm.mjs';
@@ -57,7 +57,7 @@ const MIN_BALANCE_UQOR = 150_000n;
 const RELAYER_FLOOR_UQOR = 3_000_000n;
 
 const env = loadEnv();
-const required = ['BOOTH_RELAYER_MNEMONIC', 'BOOTH_INVITES_MNEMONIC', 'ELECTION_CONTRACT_ADDRESS', 'BOOTH_DEMO_ELECTION_ID'];
+const required = ['BOOTH_RELAYER_MNEMONIC', 'BOOTH_INVITES_MNEMONIC', 'ELECTION_CONTRACT_ADDRESS', 'BOOTH_DEMO_ELECTION_ID', 'BOOTH_DEMO_ELECTION_TX'];
 const missing = required.filter((k) => !env[k]);
 if (missing.length) {
   console.error(`keeper: missing configuration: ${missing.join(', ')}`);
@@ -67,6 +67,7 @@ if (missing.length) {
 
 const CONTRACT = env.ELECTION_CONTRACT_ADDRESS;
 const ELECTION_ID = BigInt(env.BOOTH_DEMO_ELECTION_ID);
+const ELECTION_TX = env.BOOTH_DEMO_ELECTION_TX;
 const master = env.BOOTH_INVITES_MNEMONIC;
 
 const client = createPublicClient({ chain: qorechainTestnet, transport: http(NETWORK.evmRpc) });
@@ -287,14 +288,21 @@ console.log(`  opened ${opened} window(s), topped up ${toppedUp} balance(s)`);
 
 // ------------------------------------------------------- publish pool.json
 
-// The election's ML-KEM-1024 + X25519 key blob, from the creation event. The
-// page seals to this, and cannot run a log query itself without the 10,000
-// block range limit biting as the election ages.
+// The election's ML-KEM-1024 + X25519 key blob, from the creation event.
+//
+// Read from the creation transaction's RECEIPT, not from eth_getLogs. This
+// node caps getLogs at a 10,000-block range (about 4 hours), so a log scan
+// found the event only while the election was young; the first scheduled run
+// after that failed. A receipt lookup by hash has no age limit.
+//
+// The hash is pinned config, so it is checked, not trusted: the key must hash
+// to the electionKeyHash the contract stored, or nothing is published. A wrong
+// key here would make every demo ballot unopenable by the trustees.
 let electionPublicKey = '0x';
 {
-  const from = head > 9_000n ? head - 9_000n : 0n;
-  const logs = await client.getLogs({ address: CONTRACT, fromBlock: from, toBlock: 'latest' });
-  for (const l of logs) {
+  const receipt = await client.getTransactionReceipt({ hash: ELECTION_TX });
+  for (const l of receipt.logs) {
+    if (l.address.toLowerCase() !== CONTRACT.toLowerCase()) continue;
     try {
       const parsed = decodeEventLog({ abi: ELECTION_ABI, data: l.data, topics: l.topics });
       const a = parsed.args;
@@ -307,10 +315,16 @@ let electionPublicKey = '0x';
   }
 }
 if (electionPublicKey === '0x') {
-  console.error('keeper: could not read the election key from the creation event.');
-  console.error('  The ElectionCreated event may have aged past the 10,000-block log window.');
+  console.error(`keeper: transaction ${ELECTION_TX} did not create election ${ELECTION_ID} on ${CONTRACT}.`);
+  console.error('  Check BOOTH_DEMO_ELECTION_TX.');
   process.exit(1);
 }
+if (keccak256(electionPublicKey).toLowerCase() !== election.electionKeyHash.toLowerCase()) {
+  console.error('keeper: the election key from the creation event does not match the on-chain electionKeyHash.');
+  console.error(`  event key hash ${keccak256(electionPublicKey)}, contract ${election.electionKeyHash}. Refusing to publish.`);
+  process.exit(1);
+}
+console.log(`  election key ${(electionPublicKey.length - 2) / 2} bytes, matches on-chain electionKeyHash`);
 
 const payload = {
   note: 'Demo identities. These private keys are PUBLIC BY DESIGN: each is good for one ballot in this election only and holds a few cents of worthless testnet QOR.',

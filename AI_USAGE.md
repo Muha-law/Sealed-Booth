@@ -582,3 +582,34 @@ Final run: 42 checks, 0 failures, at both widths.
 - Nothing outstanding on the site. Not covered: Safari or Firefox, and the
   keeper surviving a multi-day stretch — the first scheduled tick is the real
   test of that.
+
+## 2026-11-27 — Task 10: the first scheduled keeper run failed
+
+**What I asked**
+
+To resume. The AI checked the one thing the last session could not: whether the
+keeper survives on its own schedule.
+
+**What it found, and fixed**
+
+- **The first scheduled run (05:34 UTC) went red, and every later run would
+  have too.** The keeper opened all 8 windows, then failed to publish
+  `pool.json`: it read the election key with `eth_getLogs`, and this node only
+  reaches 10,000 blocks (~4 h) back. The election had aged past that. The
+  earlier runs passed only because the election was still young. The same limit
+  is already documented in `web/chain.ts`, and the keeper had missed it.
+  It now reads the key from the creation transaction's receipt
+  (`BOOTH_DEMO_ELECTION_TX`, public config in the workflow), which works at any
+  age. It also refuses to publish unless the key's keccak256 equals the
+  `electionKeyHash` stored on chain.
+  Verified: the dry run gets the 1,601-byte key with a matching hash. Given the
+  wrong transaction (election 2 on the *older* contract, an easy mix-up) it
+  refuses.
+- **The Pages deploy in the same run failed separately**, with "No artifacts
+  named github-pages", although the upload step had finalized artifact
+  15174603426 (141,800 bytes) one second earlier. That is a GitHub-side lag.
+  Added one delayed retry of the deploy step.
+
+**Could not verify**
+
+- Whether the retry is enough if GitHub's lag lasts longer than 30 s.
