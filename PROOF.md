@@ -160,10 +160,10 @@ Elections 1-4 on this contract are abandoned attempts from earlier runs of the
 same script (rows 23-30). They hold a ballot each and were never tallied. They
 are left on chain and marked rather than hidden.
 
-## Election 1 on the current contract: three separate trustee processes
+## Election 1 on the previous deployment: three separate trustee processes
 
-Contract `0x9c9342a166835214f0f9a0c78eba790cc7340255` — the version with
-`releaseShare`. Rows 38-48.
+Contract `0x9c9342a166835214f0f9a0c78eba790cc7340255` — the first deployment
+with `releaseShare`, since replaced by `0xb7d5…` (next section). Rows 38-48.
 
 ```
 hedgehog    3  ###
@@ -206,6 +206,52 @@ appended to this file at once and `recordProof` was read-modify-write, so two
 real `releaseShare` rows were lost. They were recovered by re-reading the
 `ShareReleased` events from the chain, and the writer now takes a lock. The
 transactions were always on chain; only the bookkeeping failed.
+
+## The current contract: `0xb7d52d7934c5c26a9a8fa623ce3669c5def336e2`
+
+Deployed in row 50 (runtime matches the forge artifact byte for byte, 8,435 B).
+Everything the README cites as current lives here.
+
+| Election | What | Rows |
+|---|---|---|
+| 1 | three-process trustee tally, 5 of 5 counted: hedgehog 3, badger 1, otter 1 | 51-59 |
+| 2 | **live demo**, 30 single-use invite voters, open until 20 Dec 2026 | 60, 70 |
+| 3 | **the proof election**: ballots carry an ML-DSA-87 signature sealed inside the envelope, verified at tally against the PQC registry; three separate trustee processes, each reporting *counted 5 of 5, no ballots rejected*: hedgehog 3, badger 1, otter 1 | 61-69 |
+
+Election 2 here is **not** Booth.sol election 2 (rows 14-20, contract
+`0x3270…`), whose shares were published and whose ballots are permanently
+readable. Same number, different contract.
+
+## Corrections
+
+Rows are never renumbered, because the README cites them. Where a row's wording
+turned out to be wrong, the correction is recorded here, checked against the
+chain on 2026-11-27.
+
+**Which tally submission finalized (rows 57-59 and 67-69).** All three trustee
+processes submitted within a block or two of each other, and `recordProof` read
+`resultStatus` only after the later submissions had landed. So the "Nth
+matching submission, FINAL" wording in those rows is wrong. From the receipts:
+
+| Row | Trustee | Block | Tx index | Order | Emitted `ResultFinalized` |
+|---|---|---|---|---|---|
+| 58 | 1 | 10,808,470 | 0 | 1st | no |
+| 59 | 3 | 10,808,470 | 1 | 2nd: **this one finalized** election 1 | yes |
+| 57 | 2 | 10,808,470 | 2 | 3rd, matching, after the result was final | no |
+| 67 | 1 | 10,810,463 | 0 | 1st | no |
+| 68 | 2 | 10,810,463 | 1 | 2nd: **this one finalized** election 3 | yes |
+| 69 | 3 | 10,810,466 | 0 | 3rd, matching, after the result was final | no |
+
+All six carry identical totals `[3, 1, 1]` and the same counted-ballot hash.
+
+**The trustee key registrations are not superseded (rows 4, 5, 7, 8, 9, 10).**
+They are marked *superseded* because they were first made for Booth.sol, but
+the registry entries are still the ones in use: each trustee's `trusteeKeyRef`
+in elections 1, 2 and 3 on `0xb7d5…` equals the keccak256 of the ML-KEM-1024 key
+the registry holds today, and the registration transactions (rows 5, 8, 10)
+carry those exact keys. Likewise rows 4, 7 and 9 carry the ML-DSA-87 keys the
+PQC registry still holds for each trustee, which are the keys their recipient
+cards are verified against.
 
 ## Gas limits: two floors, not one
 

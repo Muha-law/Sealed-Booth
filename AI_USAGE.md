@@ -1,7 +1,104 @@
 # AI_USAGE.md
 
 Running log of how AI was used to build Booth, as the hackathon rules require.
-Newest entry last.
+A summary comes first; the dated task log after it is the full record, newest
+entry last.
+
+---
+
+## Summary
+
+### The workflow
+
+- **Claude (chat) for strategy and code review.** I worked out what to build
+  and why there, wrote each task as a precise request, and reviewed what came
+  back.
+- **Claude Code for building.** Each task below starts with *What I asked*,
+  my request as given. Claude Code wrote the code, tests, scripts and docs,
+  ran the deployments and live elections on testnet, and recorded every
+  transaction in PROOF.md as it landed.
+- **Nothing was taken on trust.** Claims were checked against the live chain,
+  in a real browser, or by a test. Where something could not be checked, the
+  entry says so under *Could not verify*.
+
+### What was generated
+
+- **Contract:** `contracts/Election.sol` and its 58 Foundry tests; the
+  superseded `legacy/Booth.sol`; `probes/PqcProbe.sol`.
+- **Client core** (`src/core/`): election key setup and Shamir split, ballot
+  sealing and signing, tally, inclusion check, Q-Day simulation, with 57 vitest
+  tests.
+- **Site** (`web/`): Results, Vote and Q-Day screens.
+- **Scripts:** key registration, deployment, live election runs, the
+  single-trustee process, invite provisioning, the keeper, and `check-site.mjs`.
+- **CI:** the keeper workflow on GitHub Actions and the test workflow.
+- **Docs:** README, ARCHITECTURE, VERIFIED-FACTS, PROOF.md, DEMO_SCRIPT.md,
+  this file.
+- **No cryptography was implemented.** Every primitive comes from the
+  QoreChain kits, plus the audited `shamir-secret-sharing`.
+
+### What I decided myself
+
+- **The idea.** A secret ballot whose secrecy has to outlive the cryptography
+  protecting it: harvest now, decrypt later, applied to votes.
+- **Killing AgentVault.** I dropped my earlier project, AgentVault, and built
+  Booth instead. *(your words: why AgentVault was dropped)*
+- **The reveal fix.** Booth.sol had trustees publish plaintext shares on chain.
+  When the AI proved from chain data that this made Booth.sol election 2
+  permanently readable (Task 6), I retired Booth.sol and kept it on chain as
+  evidence. I specified `releaseShare` (Task 7): after close only, trustee
+  only, once each, every share re-sealed to each trustee's registered key,
+  checked against its commitment.
+- **Invites over self-generated keys.** A visitor cannot make a usable voter
+  identity in the browser on this chain. QoreX rejects the signing calls,
+  MetaMask cannot produce the hybrid signature an EVM window needs, and the
+  REST endpoints send no CORS headers. So I chose 30 pre-provisioned,
+  single-use, allowlisted invite identities (Task 8), published by design.
+- **Pages over committed keys.** I approved publishing the demo keys but vetoed
+  committing `pool.json`. A keeper committing every 4 hours would have kept
+  rewriting history past the deadline. The keeper writes it into the Pages
+  artifact only, and its workflow cannot commit (Task 8).
+- **Signature inside the envelope.** I specified the v2 ballot (Task 8). The
+  ML-DSA-87 signature is sealed inside the envelope and binds the choice, a
+  random nonce, the voter's own address, the election, the contract and the
+  chain id, never the envelope hash. It is verified at tally against the
+  registry key for `ballotVoter()`, so a ballot cannot claim who cast it.
+- **Earlier choices:** k-of-n via Shamir with its stated limit (Task 1), and
+  no overclaiming in the README (Task 2).
+
+### Bugs Claude Code caught in its own work
+
+Each was found by checking, not by being told.
+
+| Task | Its mistake | How it was caught |
+|---|---|---|
+| 2→5 | Concluded the PQC precompile was unreachable from contracts, from an `eth_call` state override | Deployed `PqcProbe` and measured: it is reachable. Corrected in PROOF.md and VERIFIED-FACTS |
+| 6 | A 90,000 gas limit below the chain's EIP-7623 calldata floor | The chain refused to broadcast; limits now `max(estimate × 1.12, floor × 1.02)` |
+| 6 | Let the admin's EVM window run out of blocks mid-run, while its status still read 23 transactions remaining | Diagnosed from the RPC's `details` field; window checks now test `live`, not `remainingTxs` |
+| 7 | `submitTally` gas sized for the cheap branch; the finalising branch costs 2.6× | "Reverts" proved to be out of gas by replaying at the parent block |
+| 7 | `recordProof` read-modify-write raced across three processes and lost two PROOF.md rows | Recovered from the `ShareReleased` events on chain; writer now locks |
+| 8 | Wrote placeholder code into the Vote submit handler | Flagged it itself; `pool.json` lacked the ML-DSA-87 key it needed |
+| 8 | `vite.config.mjs` `root: 'web'` made vitest silently find zero tests | Noticed the count, split the configs |
+| 8 | Called `fetchPqcStatus` with a `0x` address, which returns HTTP 400 | The first v2 tally failed in all three trustee processes |
+| 9 | Results' explorer list included a transaction hash reconstructed from memory, which did not exist | Verified every hash against the chain before shipping |
+| 9 | Nav order followed chunk-load order, so a cold load could land on Vote | Caught by the real-browser check on a cold cache |
+| 9 | `loadEnv` ignored `process.env` when no `.env` existed, so the keeper would have failed on Actions | Pre-flighted the workflow against a fresh clone with secrets only in the environment; fixed in `08f26a8` with 4 tests |
+| 10 | The keeper read the election key with `eth_getLogs`, which reaches only 10,000 blocks; it broke once the election was ~4 h old | The first scheduled run went red |
+| 11 | The inclusion check assumed the newest ballot was the voter's; the trustee scanned only the last 9,000 blocks | Audit of every historical read; an interleaving test; a dry tally that found 7 of 7 ballots where the old window saw 2 |
+| 12 | "Typecheck clean" was true only on this machine: Node types came from a `node_modules` above the repo | The new CI workflow failed on a clean checkout |
+| 12 | PROOF.md labelled the wrong tally submission as the one that finalized | Receipts checked for `ResultFinalized`; corrected in PROOF.md |
+| 12 | README requirement rows still pointed at a superseded deployment | Every linked transaction's target contract checked on chain |
+
+### Open items from the log, since resolved
+
+- Task 3, faucet: claimed (Task 4).
+- Tasks 5–6, push blocked by READ-only access: resolved; every commit since is
+  on GitHub.
+- Task 5, Election.sol or Booth.sol: Election.sol (Task 6).
+- Task 4, ML-DSA-87 check on chain: moot once Booth.sol was retired. Election.sol
+  verifies the signature sealed in the envelope at tally (Task 8).
+- Task 7, keeper: built in Task 8, live since Task 9, hardened in Task 10.
+- Task 8, Pages unpublished and Q-Day placeholder: both done in Task 9.
 
 ---
 
@@ -653,3 +750,58 @@ the live site.
   until it closes on 20 Dec, and recombining shares in one process would
   defeat the trustee separation, so the dry run stops after the scan. The
   three-process tally itself is already proven on election 3.
+
+---
+
+## 2026-11-27 — Task 12: the final proof kit
+
+**What I asked**
+
+A test workflow with a README badge; the live link and a 60-second judge path
+at the top of the README; every requirement row checked against the current
+contract and live PROOF rows; the keeper in Architecture; two new limitations;
+a 3-minute demo script; this summary; a submission checklist; a LICENSE that
+matches the SPDX headers. No contract or crypto-core changes.
+
+**What the AI generated, and what checking turned up**
+
+- `.github/workflows/test.yml`: forge, vitest and the typecheck on every push
+  and PR, `contents: read`, no secrets. **Its first run failed the typecheck.**
+  `@types/node` was never a dependency: tsc had been finding Node types in a
+  `node_modules` above the repo, so "typecheck clean" in earlier entries held
+  only on this machine. Pinned `@types/node` 22.20.5; CI is green.
+- **The README requirement rows pointed at a superseded deployment.** Checked
+  on chain, 7 of the 8 Election.sol links went to `0x8a90…`. All now point at
+  `0xb7d5…`:
+  - ML-KEM: rows 61, 70
+  - client-side tally: rows 67-69
+  - AlreadyVoted and StillOpen: rows 62, 63
+  - The exception is `TallyMismatch`. It has never been triggered on `0xb7d5…`,
+    so that row is labelled as the previous deployment and names the Foundry
+    test that covers the current code.
+  - Also fixed: two links to a script since moved to `legacy/`, stale test
+    counts, and "election 2" now names its contract every time. Booth.sol
+    election 2 is the broken one; Election.sol election 2 is the live demo.
+- **PROOF.md had two kinds of mislabelled rows.** In both three-trustee
+  elections it named the wrong submission as the one that finalized. Receipts
+  show rows 59 and 68 emitted `ResultFinalized`, not 57/58 and 67. Rows were not
+  renumbered, because the README cites them; a *Corrections* section records
+  block, transaction index and order. The trustee key registrations marked
+  *superseded* are still current: every `trusteeKeyRef` on `0xb7d5…` matches
+  the registry, and the registration transactions carry those keys.
+- `docs/ARCHITECTURE.md`: the keeper section; the current contract, test count
+  and screens (it listed a "Create" screen that does not exist); the measured
+  ballot gas; the Booth.sol open decision marked resolved.
+- `DEMO_SCRIPT.md`, `SUBMISSION_CHECKLIST.md`, and `LICENSE`: GitHub's
+  canonical Apache-2.0 text, matching `package.json` and all five SPDX headers.
+
+**What I changed or decided myself**
+
+- *(your words: the AgentVault reason, in the summary above)*
+
+**Could not verify**
+
+- That registration is complete and the AI-native box is ticked: both are on
+  the submission platform, and are left for me to tick in the checklist.
+- The video, not yet recorded.
+

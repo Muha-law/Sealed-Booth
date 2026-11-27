@@ -1,5 +1,30 @@
 # Booth — a secret ballot that stays secret after Q-Day
 
+[![test](https://github.com/Muha-law/Sealed-Booth/actions/workflows/test.yml/badge.svg)](https://github.com/Muha-law/Sealed-Booth/actions/workflows/test.yml)
+[![keeper](https://github.com/Muha-law/Sealed-Booth/actions/workflows/keeper.yml/badge.svg)](https://github.com/Muha-law/Sealed-Booth/actions/workflows/keeper.yml)
+
+**Live site: https://muha-law.github.io/Sealed-Booth/**
+
+### Try it in 60 seconds
+
+1. **Open the site.** It lands on **Results**: the proof election (#3), tallied
+   by three separate trustee processes, with its final result and explorer
+   links to every transaction behind it.
+2. **Click Vote**, pick an option, press **Seal and cast my ballot**. Your
+   choice is sealed with ML-KEM-1024 and signed with ML-DSA-87 in your own tab,
+   then sent from a pre-provisioned demo identity. The receipt shows
+   **Ballot #N — inclusion check passed**, read back from contract storage,
+   with an explorer link to your transaction.
+3. **Click Q-Day**, press **Fast-forward to 2040**. Ten ballots sealed the
+   classical way break open, voter names and all. The same ten sealed by Booth
+   stay shut. It is a labelled simulation; the refusals are QoreSeal's own
+   error codes.
+
+No wallet, no faucet, no install. Results, ballot counts and your receipt are
+read live from the contract.
+
+---
+
 **QoreChain "Build Before Q-Day" — Encrypted Apps.**
 Live on QoreChain testnet `qorechain-diana`, EVM chain id **9800**.
 
@@ -14,7 +39,7 @@ counted.
 | Election contract | [`0xb7d52d7934c5c26a9a8fa623ce3669c5def336e2`](https://explore.qore.network/address/0xb7d52d7934c5c26a9a8fa623ce3669c5def336e2) |
 | Proof election | #3 — signed ballots, tallied by **three separate trustee processes**, all reporting *counted 5 of 5, no ballots rejected* |
 | Result | hedgehog 3, badger 1, otter 1 |
-| Live demo | #2, open until 20 Dec — cast a real sealed ballot in the browser |
+| Live demo | Election.sol #2, open until 20 Dec — cast a real sealed ballot in the browser |
 | Transaction record | [PROOF.md](PROOF.md) — 70 rows, every claim with its tx |
 | Measured chain facts | [docs/VERIFIED-FACTS.md](docs/VERIFIED-FACTS.md) |
 | Design and trust model | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
@@ -62,6 +87,13 @@ same counted-ballot set. No share and no election key ever reaches the chain.
 A trustee rejects any released share whose plaintext does not match the
 `shareCommitment` the contract fixed at creation, so a trustee cannot release
 junk undetected.
+
+**Keeping the demo alive.** A browser cannot open an EVM authorisation window
+on this chain, and a window lasts under 7 hours. A GitHub Actions
+[keeper](.github/workflows/keeper.yml) runs every 4 hours. It reopens windows
+for 8 single-use demo identities, checks the election key against the chain,
+and publishes `pool.json` into the Pages artifact only, never into git. Design
+in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-keeper-keeping-the-demo-votable-on-github-actions).
 
 ```mermaid
 flowchart TB
@@ -112,23 +144,25 @@ flowchart TB
 ## Category requirements, and what proves each one
 
 Every row points at the code that does it and the **transaction** that shows it
-happened. Row numbers are [PROOF.md](PROOF.md) rows.
+happened. Row numbers are [PROOF.md](PROOF.md) rows. Every Election.sol
+transaction linked here is on the current contract `0xb7d5…`, except the one
+`TallyMismatch` row, which is labelled.
 
 | Requirement | Where it lives | Proof on chain |
 |---|---|---|
-| **ML-KEM-1024 encryption** | [`src/core/election.ts`](src/core/election.ts) generates the election ML-KEM-1024 key; [`src/core/electionKey.ts`](src/core/electionKey.ts) publishes it; ballots seal in [`scripts/08-run-election-contract.ts`](scripts/08-run-election-contract.ts) | Row **31** — election 5 created with the ML-KEM-1024 key on chain ([tx](https://explore.qore.network/tx/0x109be8ec2639a7606a458df578084417e53f2af7a219b02ec72634ca692c353f)) · Row **32** — a 1,747-byte sealed ballot ([tx](https://explore.qore.network/tx/0x0e3a3e8d69afe0f1fff95c28ea8530a188ed755e7de3504795ea3d0cb577f908)) |
-| **Registered recipient keys** | [`scripts/01-register-keys.mjs`](scripts/01-register-keys.mjs) publishes each trustee's ML-KEM-1024 key via QoreSeal's KEM registry message (`algorithm_id: 2`); `Election.sol` stores only the `keccak256` **reference**, resolved against the registry | Rows **5**, **8**, **10** — the three registrations ([t1](https://explore.qore.network/tx/DE8654D700BD4B2EE499E14F151405DBDC9000E5E83949D5A405773BD5240B1F) · [t2](https://explore.qore.network/tx/1CC7849F02A98D4DA3264C60AF7C2B6B6F1EA705FEB88EC73AB1B800C4D85F1D) · [t3](https://explore.qore.network/tx/1332CCB657DD390A911ECBFFC11FA9549DEAD1B38614EBEB51802342351649B3)) |
+| **ML-KEM-1024 encryption** | [`src/core/election.ts`](src/core/election.ts) generates the election ML-KEM-1024 key; [`src/core/electionKey.ts`](src/core/electionKey.ts) publishes it; ballots seal in [`src/core/ballot.ts`](src/core/ballot.ts), called from the browser by [`web/vote.ts`](web/vote.ts) | Row **61** — election 3 created with the ML-KEM-1024 key on chain ([tx](https://explore.qore.network/tx/0xc1095741beb2e4ea163541ef38e59993d689c7f1401660e99d87cdefab87877a)) · Row **70** — a ballot sealed in the browser, 6,387 bytes of ciphertext ([tx](https://explore.qore.network/tx/0x1b89e5609f7f1c9e4c2354cdcbec893f2f0c26df1073bc8084cd19a78b0e4ae6)) |
+| **Registered recipient keys** | [`scripts/01-register-keys.mjs`](scripts/01-register-keys.mjs) publishes each trustee's ML-KEM-1024 key via QoreSeal's KEM registry message (`algorithm_id: 2`); `Election.sol` stores only the `keccak256` **reference** (`trusteeKeyRef`), resolved against the registry. Every election on `0xb7d5…` references exactly these keys (checked; see PROOF.md *Corrections*) | Rows **5**, **8**, **10** — the three registrations ([t1](https://explore.qore.network/tx/DE8654D700BD4B2EE499E14F151405DBDC9000E5E83949D5A405773BD5240B1F) · [t2](https://explore.qore.network/tx/1CC7849F02A98D4DA3264C60AF7C2B6B6F1EA705FEB88EC73AB1B800C4D85F1D) · [t3](https://explore.qore.network/tx/1332CCB657DD390A911ECBFFC11FA9549DEAD1B38614EBEB51802342351649B3)) |
 | **ML-DSA key binding** (voters) | Every ballot carries an ML-DSA-87 signature **sealed inside the envelope** over a message binding the choice, a random nonce, the voter's own address, the election, the contract and the chain id — never the envelope hash. At tally the message is rebuilt from `ballotVoter()` on chain and verified against the key the **PQC registry** holds for that address, so a ballot cannot assert who cast it. [`src/core/ballot.ts`](src/core/ballot.ts), [`src/core/tally.ts`](src/core/tally.ts) | Row **70** — a browser-cast signed ballot ([tx](https://explore.qore.network/tx/0x1b89e5609f7f1c9e4c2354cdcbec893f2f0c26df1073bc8084cd19a78b0e4ae6)) · election 3 rows 61-69, where all three trustees reported "counted 5 of 5, no ballots rejected" |
-| **ML-DSA key binding** (trustees) | QoreSeal **recipient cards**: `signRecipientCard` binds the X25519 key and the SHA3-256 of the registered ML-KEM key to the account, signed with its ML-DSA-87 key. `verifyRecipientCard` checks it against the account's **on-chain** ML-DSA-87 *and* ML-KEM keys before anything is sealed — [`scripts/01-register-keys.mjs`](scripts/01-register-keys.mjs), re-verified in [`scripts/08`](scripts/08-run-election-contract.ts) | Rows **4**, **7**, **9** — ML-DSA-87 identities registered with proof of possession ([t1](https://explore.qore.network/tx/D0DA08E2C8CAC4019829103D2D7063BD93F99834311C837286E6E1AE7D015816) · [t2](https://explore.qore.network/tx/C4EADFC535CB64EB96C292F1DED59AA16942EE923F610342FCB33FC6BDB8DF85) · [t3](https://explore.qore.network/tx/8AB10F925BB3632A01921F9AE1697DFE855C9086DEFF0568ED706D6338EEC5E8)) |
-| **Client-side encryption and decryption** | Sealing: [`src/core/ballot.ts`](src/core/ballot.ts) — no network calls, the plaintext choice never leaves the tab. Opening: [`src/core/tally.ts`](src/core/tally.ts) — trustees recombine and decrypt locally. There is no server anywhere in this repo | Rows **35**, **36** — trustees submit **totals only**; no share or key is ever sent ([t1](https://explore.qore.network/tx/0x2675d3ded15bedd69a8c7683f66233ae73bed4e1f3ac0228bcbd1207aeb314f0) · [t2](https://explore.qore.network/tx/0xd20f42944a2eb3532f46a21264a56fa1e938bdb3e5bfb543d41266e29022c71b)) |
+| **ML-DSA key binding** (trustees) | QoreSeal **recipient cards**: `signRecipientCard` binds the X25519 key and the SHA3-256 of the registered ML-KEM key to the account, signed with its ML-DSA-87 key. `verifyRecipientCard` checks it against the account's **on-chain** ML-DSA-87 *and* ML-KEM keys before anything is sealed — [`scripts/01-register-keys.mjs`](scripts/01-register-keys.mjs), re-verified by every trustee before it seals anything, in [`scripts/09-trustee.ts`](scripts/09-trustee.ts) | Rows **4**, **7**, **9** — ML-DSA-87 identities registered with proof of possession ([t1](https://explore.qore.network/tx/D0DA08E2C8CAC4019829103D2D7063BD93F99834311C837286E6E1AE7D015816) · [t2](https://explore.qore.network/tx/C4EADFC535CB64EB96C292F1DED59AA16942EE923F610342FCB33FC6BDB8DF85) · [t3](https://explore.qore.network/tx/8AB10F925BB3632A01921F9AE1697DFE855C9086DEFF0568ED706D6338EEC5E8)) |
+| **Client-side encryption and decryption** | Sealing: [`src/core/ballot.ts`](src/core/ballot.ts) — no network calls, the plaintext choice never leaves the tab. Opening: [`src/core/tally.ts`](src/core/tally.ts) — trustees recombine and decrypt locally. There is no server anywhere in this repo | Rows **67**, **68**, **69** — three trustee processes submit **totals only**; no share or key is ever sent; row 68 finalized the result ([t1](https://explore.qore.network/tx/0x5d01214e5b9f6016df9ff0a100e84b483cc87ec91a903cdb5fb17ec104b5027a) · [t2](https://explore.qore.network/tx/0xb4c7d026494541de03d46363b1117ddace510452a3abf81c30a73671a926cdc6) · [t3](https://explore.qore.network/tx/0x5a327756b45f2cbca1049233bf0cb270eb255f062a117672054c29b56bc8f6f4)) |
 
 Rules enforced on chain, each with a refused transaction to show it:
 
 | Rule | Error | Proof |
 |---|---|---|
-| One voter, one ballot | `AlreadyVoted` | Row **33** ([tx](https://explore.qore.network/tx/0x88742d4f16dc25ff90ac766c2fc883044faf615920374df427e9a2199474befb)) |
-| Nothing opens before the close | `StillOpen` | Row **34** ([tx](https://explore.qore.network/tx/0x596bb3b89edbd058570425e0d0d2e13f228cedf2e1cd88f613de7b5ab9e1c58d)) |
-| A dissenting trustee cannot rewrite a result | `TallyMismatch` | Row **37** ([tx](https://explore.qore.network/tx/0xc8b85a13e727e3af6f41917b82ea79239bfcd98c907f30815d319b15fb57dee2)) |
+| One voter, one ballot | `AlreadyVoted` | Row **62**, election 3 ([tx](https://explore.qore.network/tx/0x1010853349e9e3f7ceddb6c3448ad9a290609a833d2aa54bd28685568a0e59a9)) |
+| Nothing opens before the close | `StillOpen` | Row **63**, election 3 ([tx](https://explore.qore.network/tx/0xbdb95bd5666644ec77a426f20d63767bfd098b0c6f21bd89e201369824b9ed9d)) |
+| A dissenting trustee cannot rewrite a result | `TallyMismatch` | Row **37**, on the **previous** deployment `0x8a90…` ([tx](https://explore.qore.network/tx/0xc8b85a13e727e3af6f41917b82ea79239bfcd98c907f30815d319b15fb57dee2)). No trustee has dissented on `0xb7d5…`; on the current code it is `test_contradicting_a_final_result_reverts_with_TallyMismatch` in [`test/solidity/Election.t.sol`](test/solidity/Election.t.sol), run by CI |
 
 ## We broke our own v1
 
@@ -142,8 +176,9 @@ rather than assuming it: reading `getRevealedShares(2)` straight off the chain
 returns those plaintext shares, two of them recombine to the **3,168-byte
 election ML-KEM-1024 decapsulation key**, and it matches the `electionKeyHash`
 the contract had stored. Because `Booth.BallotCast` also *indexes the voter
-address*, anybody can now decrypt every ballot in Booth election 2 **and**
-attribute each choice to the voter who cast it.
+address*, anybody can now decrypt every ballot in Booth.sol election 2
+(contract `0x3270…`) **and** attribute each choice to the voter who cast it.
+This is not the live demo, which is election 2 on Election.sol `0xb7d5…`.
 
 The three transactions that did it:
 
@@ -151,7 +186,7 @@ The three transactions that did it:
 - Row **19** — trustee 2 reveals; two shares are now enough ([tx](https://explore.qore.network/tx/0x91c3225769f14e2300dc50e01791c388f8cf1e37a41b11bcf87bfda8faa55831))
 - Row **20** — trustee 3 reveals too ([tx](https://explore.qore.network/tx/0x7d4742b1029fbe6e4a7de3f635c3dd8efff3722a2763c1e27faa343199b8c392))
 
-**Booth election 2 has no ballot secrecy and cannot regain it.** Those five
+**Booth.sol election 2 has no ballot secrecy and cannot regain it.** Those five
 ballots are permanently readable. We left it on chain and wrote it down instead
 of quietly deleting it, because the failure is the most useful thing we learned:
 *public verifiability bought with published key material is not ballot secrecy.*
@@ -182,6 +217,10 @@ deliberately, with the alternative sitting in [`legacy/`](legacy/) as evidence.
 - **The admin can censor at registration.** It chooses the allowlist and the
   open/close times. This is public (`VoterAllowed` events, `isVoter()`), so it
   is detectable — but it is not prevented.
+- **The admin can add voters mid-election.** `addVoters` is admin-only and
+  works at any time before the close, so the roll is not frozen when voting
+  opens. Each addition emits `VoterAllowed`, so it is visible, but nothing
+  stops it. It exists so the demo election's invite pool can be topped up.
 - **Trustees can stall indefinitely.** Fewer than k submissions means no result.
   There is no timeout or fallback.
 - **The Q-Day screen is a simulation, and says so on screen.** No quantum
@@ -194,9 +233,13 @@ deliberately, with the alternative sitting in [`legacy/`](legacy/) as evidence.
   (measured — docs/VERIFIED-FACTS.md), and MetaMask cannot produce the hybrid
   native-lane signature that opening an EVM window needs. Nor can a page reach
   the REST or Tendermint endpoints, which send no CORS headers. So a voter must
-  use a pre-provisioned identity whose keys are published in the page. Each is
-  single-use and holds a few cents of worthless testnet QOR, and the Vote screen
-  says so plainly — but anyone can read those keys, and burn those ballots.
+  use a pre-provisioned identity whose keys are published in the page.
+  **These demo voter keys are public by design**: anyone can read them from
+  `pool.json`. Each is single-use, allowlisted only for the demo election, and
+  holds a few cents of worthless testnet QOR, and the Vote screen says so
+  plainly. But anyone can burn those ballots, and a demo vote proves the
+  cryptography, not the voter's identity. The master mnemonic they derive from
+  is a repository secret and never leaves the keeper.
 - **The contract is not source-verified**, because `explore.qore.network`
   exposes no verification API and Sourcify does not list chain 9800. Instead the
   compiler and settings are pinned and the deployed runtime is checked against
@@ -240,15 +283,18 @@ AI assistance is logged in [AI_USAGE.md](AI_USAGE.md), as the rules require.
 
 ```
 contracts/Election.sol      the submission — k-of-n trustee tally
-legacy/                     Booth.sol, superseded (see "We broke our own v1")
+web/                        the site: Results, Vote, Q-Day
+src/core/                   sealing, k-of-n shares, tally, inclusion — no DOM
+test/solidity/              58 Foundry tests
+test/*.test.ts              57 vitest tests, incl. live-EVM contract checks
+scripts/                    account setup, registration, deploy, election runs,
+                            trustee, keeper, check-site (real-browser check)
+.github/workflows/          test (forge, vitest, typecheck) and keeper
+legacy/                     Booth.sol and its scripts, superseded (see "We broke our own v1")
 probes/PqcProbe.sol         deployed evidence about the PQC precompile
-src/core/                   sealing, k-of-n shares, tally — no network, no DOM
-test/solidity/              38 Foundry tests
-test/*.test.ts              27 vitest tests, incl. live-EVM contract checks
-scripts/                    account setup, registration, deploy, election runs
 docs/VERIFIED-FACTS.md      every chain fact, measured, with how
-docs/ARCHITECTURE.md        design, trust model, who can censor what
-PROOF.md                    37 transactions, each with what it proves
+docs/ARCHITECTURE.md        design, trust model, the keeper, who can censor what
+PROOF.md                    70 transactions, each with what it proves
 ```
 
 ## Running it
@@ -256,17 +302,20 @@ PROOF.md                    37 transactions, each with what it proves
 ```bash
 npm install
 git submodule update --init --recursive   # forge-std
-npm test                                  # 27 vitest
-forge test                                # 38 Foundry
+npm test                                  # 57 vitest
+forge test                                # 58 Foundry
+npm run typecheck
 node scripts/generate-accounts.mjs        # writes .env, prints only addresses
 #   fund the printed qor1 address at https://dashboard.qorechain.io/faucet
 node scripts/status.mjs                   # preflight: balances, keys, windows
 node scripts/01-register-keys.mjs         # trustee ML-DSA-87 + ML-KEM-1024
 npx tsx scripts/07-deploy-election.ts     # deploy Election.sol
-npx tsx scripts/08-run-election-contract.ts   # one full election
+npx tsx scripts/10-run-election-v2.ts     # one full election, 3 trustee processes
+npx tsx scripts/09-trustee.ts 0 2 --dry-run   # a trustee's read-only scan of election 2
+node scripts/check-site.mjs               # drive the live site in Chrome (casts a real ballot)
 ```
 
 Secrets live only in `.env`, which is gitignored. No script ever prints a
 mnemonic or a private key.
 
-Apache-2.0.
+Licensed under [Apache-2.0](LICENSE).

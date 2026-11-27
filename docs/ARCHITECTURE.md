@@ -6,8 +6,10 @@ Decided 2026-11-25. Every number here was measured, not estimated — see
 ## What the submission is
 
 **`contracts/Election.sol` is the contract.** It is built and tested with
-Foundry (38 tests) and deployed at
-`0x8a90db2f3f2192f94a1376c2b51f34f0628b1110` on EVM chain 9800.
+Foundry (58 tests) and deployed at
+`0xb7d52d7934c5c26a9a8fa623ce3669c5def336e2` on EVM chain 9800 (PROOF.md row
+50). Two earlier deployments of it, `0x8a90…` and `0x9c93…`, are kept on chain
+and labelled as previous in PROOF.md.
 
 `legacy/Booth.sol` is the earlier iteration, kept because it is deployed and
 PROOF.md cites its transactions. It is **superseded** and not part of the
@@ -25,8 +27,9 @@ Booth's `BallotCast` indexes the voter address, every decrypted choice is
 linked to the voter who cast it. This was verified, not assumed: reading
 `getRevealedShares(2)` off chain returns the plaintext shares, two of them
 recombine to the 3,168-byte election secret key, and it matches the
-`electionKeyHash` the contract stored. **Election 2 on Booth has no ballot
-secrecy and cannot regain it.**
+`electionKeyHash` the contract stored. **Election 2 on Booth.sol (`0x3270…`)
+has no ballot secrecy and cannot regain it.** This is unrelated to the live
+demo, which is election 2 on Election.sol (`0xb7d5…`).
 
 Election.sol fixes this: trustees decrypt off chain and submit only **totals**.
 No share and no election key ever reaches the chain, so only the trustees can
@@ -217,6 +220,12 @@ rule, but the on-chain admission gate is secp256k1 and would not survive Q-Day.
 
 ### Open decision: move the ML-DSA-87 check on chain
 
+*Resolved by retiring Booth.sol.* Election.sol takes the voter from
+`msg.sender` and carries the ML-DSA-87 signature sealed inside the ballot
+envelope, verified at tally against the key the PQC registry holds for
+`ballotVoter()` (see "Ballot path in Election.sol" above). The text below is
+kept as the record of the Booth.sol option.
+
 `castBallot` already receives the ML-DSA-87 public key and signature, so the
 change is to add one `staticcall` to `0x…0a01` and drop the secp256k1 signature
 entirely — the ML-DSA-87 signature over a commitment that already binds chain
@@ -237,11 +246,47 @@ ballot carries the full key, the contract checks the hash against the roll, then
 calls the precompile. Envelopes go in **events**, with only the commitment hash
 in storage.
 
-*Not yet verified: real gas cost of a ballot.*
+Measured since: a browser-cast ballot carrying the signature inside a
+6,387-byte envelope was charged 257,200 gas (PROOF.md row 70; on this chain the
+charge is `max(real, limit / 2)`).
 
 ## Screens
 
-Create · Vote · Results · Q-Day demo. No landing page, no accounts system.
+Results (the landing screen) · Vote · Q-Day. No landing page, no accounts
+system. Elections are created by script (`scripts/10-run-election-v2.ts`,
+`scripts/12-provision-invites.ts`), not from the page.
+
+## The keeper: keeping the demo votable on GitHub Actions
+
+A judge's browser cannot open an EVM authorisation window (that needs a hybrid
+native-lane signature, and the REST endpoints send no CORS headers), and a
+window lasts at most 17,280 blocks, about 6 h 51 m. So the demo would go dead
+within hours without something reopening windows.
+
+`.github/workflows/keeper.yml` runs `scripts/keeper.mjs` every 4 hours, on
+every push to `main` and on demand:
+
+1. reads the demo election from the contract and the relayer's balance;
+2. keeps 8 unvoted, allowlisted invite identities ready: reopens each one's
+   EVM window and tops up its balance when needed. Nothing is sent when all is
+   healthy;
+3. reads the election key from the creation transaction's **receipt**
+   (`BOOTH_DEMO_ELECTION_TX`), never from `eth_getLogs`, which this node caps at
+   10,000 blocks, and refuses to publish unless `keccak256(key)` equals the
+   on-chain `electionKeyHash`;
+4. writes `pool.json` (the live invites, their single-use keys and the
+   election key) into the **Pages artifact only**, checks it carries no master
+   mnemonic, builds the site and deploys it.
+
+Secrets: `BOOTH_RELAYER_MNEMONIC` and `BOOTH_INVITES_MNEMONIC` are repository
+secrets, masked in the public log. Permissions are `contents: read`, so the
+workflow cannot commit. Git history stays frozen at the last human commit.
+Runs are serialised so two keepers never race on account sequence numbers.
+
+What a judge's browser reads is all age-proof: contract storage (`getElection`,
+`ballotHash`, results), the receipt of the ballot it just sent, and the pinned
+transaction hashes in `web/chain.ts`. Nothing on the judge's path or the
+keeper's reads event logs.
 
 ## Credits owed in the README
 
