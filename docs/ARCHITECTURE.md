@@ -45,13 +45,16 @@ that voter's own secp256k1 key — which the admin, the trustees and any
 observer do not have. There is no relayer in the ballot path: each voter sends
 their own transaction. **No party can put a ballot in someone else's name.**
 
-### The admin can censor, at registration, in public
+### The admin controls the roll, in public
 
 What the admin *can* do is leave an eligible person off the allowlist, or
-choose the open and close times. Both are visible on chain: the allowlist is
-emitted as `VoterAllowed` events at creation and `isVoter()` is public, so
-exclusion is detectable by the excluded voter and by anyone auditing. The
-admin cannot add voters after the close, cannot vote for anyone, and cannot
+choose the open and close times. It can also add voters with `addVoters` at any
+time **before** the close, not only at creation, so it could allowlist
+addresses it controls mid-election and vote with them. All of this is visible
+on chain: every addition emits `VoterAllowed` and `isVoter()` is public, so
+exclusion is detectable by the excluded voter, and late additions by anyone
+comparing the roll over time. Detectable, not prevented. The admin cannot add
+voters after the close, cannot cast a ballot in anyone else's name, and cannot
 read a ballot — it holds no election key.
 
 The trustees can censor differently: by refusing to submit, they can stop a
@@ -72,7 +75,9 @@ hasVoted(electionId, myAddress)  == true                       // recorded again
 
 Both are public views, so a voter needs nothing but the chain to check, and
 the receipt reveals nothing: it is a hash of ciphertext. All five voters in
-election 5 verified inclusion this way.
+election 5 on the first deployment verified inclusion this way, and the Vote
+screen runs the same check for every browser ballot, taking the ballot id from
+the voter's own `BallotCast` receipt.
 
 The honest limit: a receipt proves a ballot was **included**, not that it was
 **counted correctly** — the counting happens off chain in the trustees' hands.

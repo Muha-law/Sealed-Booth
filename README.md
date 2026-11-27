@@ -1,7 +1,6 @@
 # Booth — a secret ballot that stays secret after Q-Day
 
 [![test](https://github.com/Muha-law/Sealed-Booth/actions/workflows/test.yml/badge.svg)](https://github.com/Muha-law/Sealed-Booth/actions/workflows/test.yml)
-[![keeper](https://github.com/Muha-law/Sealed-Booth/actions/workflows/keeper.yml/badge.svg)](https://github.com/Muha-law/Sealed-Booth/actions/workflows/keeper.yml)
 
 **Live site: https://muha-law.github.io/Sealed-Booth/**
 
@@ -9,7 +8,7 @@
 
 1. **Open the site.** It lands on **Results**: the proof election (#3), tallied
    by three separate trustee processes, with its final result and explorer
-   links to every transaction behind it.
+   links to the key transactions behind it.
 2. **Click Vote**, pick an option, press **Seal and cast my ballot**. Your
    choice is sealed with ML-KEM-1024 and signed with ML-DSA-87 in your own tab,
    then sent from a pre-provisioned demo identity. The receipt shows
@@ -214,13 +213,16 @@ deliberately, with the alternative sitting in [`legacy/`](legacy/) as evidence.
   all lie the same way would not be caught by the contract.
 - **A receipt proves inclusion, not correct counting.** `ballotHash()` shows
   your exact ciphertext is on chain; the counting happens off chain.
-- **The admin can censor at registration.** It chooses the allowlist and the
-  open/close times. This is public (`VoterAllowed` events, `isVoter()`), so it
-  is detectable — but it is not prevented.
+- **The admin controls the roll.** It chooses the allowlist and the open/close
+  times, so it can leave an eligible voter out. This is public (`VoterAllowed`
+  events, `isVoter()`), so it is detectable — but it is not prevented.
 - **The admin can add voters mid-election.** `addVoters` is admin-only and
   works at any time before the close, so the roll is not frozen when voting
-  opens. Each addition emits `VoterAllowed`, so it is visible, but nothing
-  stops it. It exists so the demo election's invite pool can be topped up.
+  opens. The real cost: **an admin could allowlist addresses it controls
+  mid-election and vote with them.** Each addition emits `VoterAllowed`, so
+  ballot stuffing would be visible to anyone comparing the roll over time, but
+  nothing stops it. It exists so the demo election's invite pool can be topped
+  up.
 - **Trustees can stall indefinitely.** Fewer than k submissions means no result.
   There is no timeout or fallback.
 - **The Q-Day screen is a simulation, and says so on screen.** No quantum
@@ -243,7 +245,10 @@ deliberately, with the alternative sitting in [`legacy/`](legacy/) as evidence.
 - **The contract is not source-verified**, because `explore.qore.network`
   exposes no verification API and Sourcify does not list chain 9800. Instead the
   compiler and settings are pinned and the deployed runtime is checked against
-  the Foundry artifact (row 22).
+  the Foundry artifact (row 50). Re-checked 2026-11-27: `cast code` at
+  `0xb7d5…` equals a fresh `forge build` of this repository except for the 60
+  bytes where the immutable `admin` address is patched in. The metadata hash is
+  identical, so the source has not changed since deployment.
 - **Testnet only.** Nothing here has been audited.
 
 ## Credits

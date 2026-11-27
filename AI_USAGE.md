@@ -794,6 +794,15 @@ matches the SPDX headers. No contract or crypto-core changes.
   ballot gas; the Booth.sol open decision marked resolved.
 - `DEMO_SCRIPT.md`, `SUBMISSION_CHECKLIST.md`, and `LICENSE`: GitHub's
   canonical Apache-2.0 text, matching `package.json` and all five SPDX headers.
+- **A review pass on the prose, after the links checked out:**
+  - The README's reproducibility line still cited the first deployment's row.
+    Re-checked: the code at `0xb7d5…` equals a fresh forge build except the 60
+    bytes of the immutable `admin`, and the metadata hash is identical.
+  - ARCHITECTURE said the admin "cannot vote for anyone". With `addVoters` it
+    can allowlist addresses it controls mid-election and vote with them:
+    visible, not prevented. Both docs now say so.
+  - The demo script had said a receipt "proves my ballot is counted". It
+    proves inclusion, which is what the README's own limitation says.
 
 **What I changed or decided myself**
 

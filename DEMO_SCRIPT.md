@@ -27,11 +27,11 @@ count is in brackets. Labels in **bold** are exactly what appears on screen.
 
 **SHOW:** the Results screen, still.
 
-**SAY** [52 words]
-> A vote has to stay secret for life. Not for a year: for life. But ballots
-> encrypted today with RSA or elliptic curves can be recorded now and decrypted
-> later, the day a quantum computer arrives. Harvest now, decrypt later. The
-> tally is public either way. What leaks is who voted what.
+**SAY** [46 words]
+> A vote has to stay secret for life. But ballots encrypted today with RSA or
+> elliptic curves can be recorded now and decrypted later, the day a quantum
+> computer arrives. Harvest now, decrypt later. The tally is public either way.
+> What leaks is who voted what.
 
 ## 0:20–0:40 · What Booth is
 
@@ -48,37 +48,34 @@ count is in brackets. Labels in **bold** are exactly what appears on screen.
 **0:40 · DO:** stay on **Results**. Scroll slowly through **Final result**, then
 **How this result was produced**.
 
-**SAY** [39 words]
-> This is a finished election. Five signed ballots, tallied by three trustees
-> running as separate processes, each holding one key. The contract published a
-> result only when two of them submitted identical totals. Every step links to
-> its transaction.
+**SAY** [28 words]
+> A finished election: five signed ballots, tallied by three trustees in
+> separate processes, each holding one key. The contract published a result only
+> when two submitted identical totals.
 
 **0:55 · DO:** click **Vote** in the top nav. Point at **You are voting as a demo
 identity**. Pick an option. Click **Seal and cast my ballot**.
 
-**SAY** [39 words, while it seals and sends]
-> No wallet needed. This is a pre-provisioned demo identity, public by design
-> and good for one ballot. Watch the status line: sealing with ML-KEM-1024 and
-> signing with ML-DSA-87, right here in the tab. The plaintext never leaves this
-> page.
+**SAY** [30 words, while it seals and sends; then let the wait run silent]
+> No wallet needed: a demo identity, public by design, good for one ballot.
+> Sealing with ML-KEM-1024, signing with ML-DSA-87, right here in the tab. My
+> choice never leaves this page.
 
 **1:12 · DO:** the receipt appears. Point at **Your ballot is on chain**, then
 **Ballot #N — inclusion check passed**, then the **Your receipt** table. Click
 **explorer** and show the transaction for two seconds, then come back.
 
-**SAY** [39 words]
-> That's my receipt. The ballot id comes from my own transaction, and the page
-> reads the contract's stored hash for that id: it matches what I sealed. It
-> proves my ballot is counted, and reveals nothing about my choice.
+**SAY** [32 words]
+> My receipt. The ballot id comes from my own transaction, and the contract's
+> stored hash for that id matches what I sealed. My ballot is on chain, exactly
+> as I sealed it.
 
 **1:28 · DO:** reload the page, click **Vote** again. Point at the **Demo voter #**
 number, which is different.
 
-**SAY** [31 words]
-> Try again, and the page offers a different identity, because that one has
-> voted. One identity, one ballot: the contract refuses a second, with
-> AlreadyVoted. That refusal is on chain too.
+**SAY** [23 words]
+> Again, and it offers a different identity, because that one has voted. One
+> identity, one ballot: the contract refuses a second with AlreadyVoted.
 
 *(Proof of the refusal: PROOF.md row 62. Nothing is refused on screen here, so
 do not say it was.)*
@@ -126,5 +123,6 @@ to the top.
 
 ---
 
-**Total spoken:** about 419 words over 180 s, roughly 2.3 words a second, which
-leaves room for the transaction wait at 0:55.
+**Total spoken:** about 378 words over 180 s, roughly 2.1 words a second. The
+live segment (0:40–1:40) carries 113 words, about 45 s of speech, which leaves
+roughly 15 s for the reload, the explorer detour and the transaction wait.
