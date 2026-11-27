@@ -3,6 +3,7 @@
  *
  *   node scripts/keeper.mjs            # keep the pool alive, write pool.json
  *   node scripts/keeper.mjs --dry-run  # read-only: report, send nothing
+ *   node scripts/keeper.mjs --min-unvoted 24   # provision ahead of demand
  *
  * Why it has to exist: an EVM authorisation window on this chain lasts at most
  * 17,280 blocks, which at the measured 1.427 s/block is 6 h 51 m. Judging runs
@@ -11,8 +12,10 @@
  * What it does, idempotently:
  *   - finds invites that are allowlisted and have NOT voted
  *   - keeps POOL_TARGET of them with a live window and enough balance
- *   - when unvoted invites run short, provisions the next HD indices (fund,
- *     register their ML-DSA-87 key) and adds them with addVoters
+ *   - when fewer than MIN_UNVOTED allowlisted invites are unvoted, extends the
+ *     pool from the master mnemonic: funds the next HD indices, registers their
+ *     ML-DSA-87 keys, opens the relayer's own EVM window, and allowlists them
+ *     with addVoters. Up to INVITE_MAX (200) identities can ever be derived.
  *   - writes public/pool.json for the Vote page: only the pool's keys
  *   - fails loudly, with a non-zero exit, when the relayer runs low
  *
@@ -20,7 +23,7 @@
  * nor any derived private key. Addresses and counts only. The run log is public.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { createPublicClient, http, toHex } from 'viem';
+import { createPublicClient, encodeFunctionData, http, toHex } from 'viem';
 import { evmWindowStatus, evmWindowCost } from '@qorechain/evm/window';
 import { qorechainTestnet } from '@qorechain/evm';
 import { fetchPqcStatus, msg } from '@qorechain/sdk';
@@ -28,7 +31,7 @@ import { buildRegisterPqKeyMessage } from '@qorechain/qoresign';
 import { decodeEventLog, keccak256 } from 'viem';
 import { loadEnv, NETWORK, formatQor } from './lib/env.mjs';
 import { inviteAccount, INVITE_MAX } from './lib/accounts.mjs';
-import { walletClient, maxFeePerGas } from './lib/evm.mjs';
+import { walletClient, maxFeePerGas, ensureWindow } from './lib/evm.mjs';
 import { sendNative, unifiedAccount, anyToEncodeObject, classicalPublicKeyBytes } from './lib/chain.mjs';
 import ELECTION_ABI from '../src/abi/Election.json' with { type: 'json' };
 
@@ -110,42 +113,91 @@ if (relayerBalance < RELAYER_FLOOR_UQOR) {
 
 // ------------------------------------------------- find who can still vote
 
-const candidates = [];
-let scanned = 0;
-for (let i = 0; i < INVITE_MAX && candidates.length < POOL_TARGET; i++) {
-  const acct = inviteAccount(master, i);
-  scanned = i + 1;
-  const [allowlisted, voted] = await Promise.all([
-    read('isVoter', [ELECTION_ID, acct.evm]),
-    read('hasVoted', [ELECTION_ID, acct.evm]),
-  ]);
-  if (!allowlisted) break; // indices are allowlisted in order; the first gap is the frontier
-  if (voted) continue;
-  candidates.push({ index: i, acct });
+/**
+ * Stop scanning after this many consecutive indices that are not allowlisted.
+ * Indices are allowlisted lowest-first, so one gap is normally the frontier,
+ * but a run that failed half-way could leave a hole; a single gap must never
+ * hide the invites beyond it.
+ */
+const GAP_LIMIT = 10;
+/** At most this many new invites per run, so one run's spend is bounded. */
+const MAX_NEW_PER_RUN = 8;
+
+function numberFlag(name) {
+  const i = process.argv.indexOf(name);
+  if (i < 0) return undefined;
+  const n = Number(process.argv[i + 1]);
+  if (!Number.isInteger(n) || n < 0) throw new Error(`${name} needs a whole number`);
+  return n;
 }
-console.log(`  scanned ${scanned} invites, ${candidates.length} unvoted and allowlisted`);
+/**
+ * Keep at least this many allowlisted invites that have not voted. Defaults to
+ * POOL_TARGET; `--min-unvoted N` raises it, to provision ahead of demand or to
+ * exercise the extension path on purpose.
+ */
+const MIN_UNVOTED = Math.max(POOL_TARGET, numberFlag('--min-unvoted') ?? POOL_TARGET);
 
-// ----------------------------------- top the allowlist up when running short
+const candidates = []; // allowlisted, not voted, lowest index first
+const notAllowlisted = []; // indices seen that are free to provision
+let scanned = 0;
+let misses = 0;
+const BATCH = 10;
+for (let base = 0; base < INVITE_MAX && misses < GAP_LIMIT; base += BATCH) {
+  const batch = [];
+  for (let i = base; i < Math.min(base + BATCH, INVITE_MAX); i++) {
+    const acct = inviteAccount(master, i);
+    batch.push(
+      Promise.all([read('isVoter', [ELECTION_ID, acct.evm]), read('hasVoted', [ELECTION_ID, acct.evm])]).then(
+        ([allowlisted, voted]) => ({ index: i, acct, allowlisted, voted }),
+      ),
+    );
+  }
+  for (const r of await Promise.all(batch)) {
+    if (misses >= GAP_LIMIT) break;
+    scanned = r.index + 1;
+    if (!r.allowlisted) {
+      misses++;
+      notAllowlisted.push({ index: r.index, acct: r.acct });
+      continue;
+    }
+    misses = 0;
+    if (!r.voted) candidates.push({ index: r.index, acct: r.acct });
+  }
+}
+console.log(
+  `  scanned ${scanned} invites: ${candidates.length} unvoted and allowlisted ` +
+    `(keeping at least ${MIN_UNVOTED}, of ${INVITE_MAX} derivable)`,
+);
 
-if (candidates.length < POOL_TARGET) {
-  const wanted = POOL_TARGET - candidates.length;
-  console.log(`  only ${candidates.length} left — provisioning ${wanted} more`);
+// ----------------------------------- extend the allowlist when running short
 
-  const fresh = [];
-  let next = scanned;
-  while (fresh.length < wanted && next < INVITE_MAX) {
+/** EIP-7623 calldata floor. The chain refuses to broadcast below it. */
+function calldataFloorGas(data) {
+  const body = data.slice(2);
+  let tokens = 0n;
+  for (let i = 0; i < body.length; i += 2) tokens += body.slice(i, i + 2) === '00' ? 1n : 4n;
+  return 21_000n + 10n * tokens;
+}
+
+if (candidates.length < MIN_UNVOTED) {
+  const wanted = Math.min(MIN_UNVOTED - candidates.length, MAX_NEW_PER_RUN);
+  console.log(`  only ${candidates.length} unvoted: extending the pool by ${wanted} from the master mnemonic`);
+
+  // Lowest free indices first, so the allowlist stays contiguous.
+  const fresh = notAllowlisted.slice(0, wanted);
+  for (let next = scanned; fresh.length < wanted && next < INVITE_MAX; next++) {
     const acct = inviteAccount(master, next);
     if (!(await read('isVoter', [ELECTION_ID, acct.evm]))) fresh.push({ index: next, acct });
-    next++;
   }
-
-  if (!fresh.length) {
-    console.error(`keeper: invite indices exhausted at INVITE_MAX=${INVITE_MAX}; raise it to add more.`);
+  if (fresh.length < wanted) {
+    console.error(
+      `keeper: only ${fresh.length} free invite index(es) left below INVITE_MAX=${INVITE_MAX}; raise it to add more.`,
+    );
   }
 
   for (const { index, acct } of fresh) {
     if (DRY_RUN) {
-      console.log(`    [dry-run] would provision invite ${index} ${acct.evm}`);
+      console.log(`    [dry-run] would fund, register and allowlist invite ${index} ${acct.evm}`);
       continue;
     }
     const uni = await unifiedAccount(master, index);
@@ -180,33 +232,49 @@ if (candidates.length < POOL_TARGET) {
         { bootstrap: true, gas: 320_000, memo: `booth: invite ${index} ML-DSA-87 identity` },
       );
     }
-    console.log(`    provisioned invite ${index} ${acct.evm}`);
+    console.log(`    funded and registered invite ${index} ${acct.evm}`);
   }
 
+  if (fresh.length && DRY_RUN) {
+    console.log('    [dry-run] would ensure the relayer has a live EVM window, then call addVoters');
+  }
   if (fresh.length && !DRY_RUN) {
-    // addVoters: admin only, while the election is open. Idempotent per address.
+    // addVoters is an EVM transaction from the admin (the relayer), and the
+    // chain refuses every EVM transaction from an account without a LIVE
+    // authorisation window. The relayer's own window is not kept alive by
+    // anything else, so open one here.
+    await ensureWindow(relayer, { txs: 2, gasEach: 400_000 });
+
     const fee = await maxFeePerGas(client);
     const addresses = fresh.map((f) => f.acct.evm);
+    const args = [ELECTION_ID, addresses];
     const estimate = await client.estimateContractGas({
       address: CONTRACT,
       abi: ELECTION_ABI,
       functionName: 'addVoters',
-      args: [ELECTION_ID, addresses],
+      args,
       account: relayer.evm,
     });
+    const floor = calldataFloorGas(encodeFunctionData({ abi: ELECTION_ABI, functionName: 'addVoters', args }));
+    const withMargin = (estimate * 112n) / 100n;
+    const gas = withMargin > floor ? withMargin : (floor * 102n) / 100n;
     const hash = await walletClient(relayer.privateKey).writeContract({
       address: CONTRACT,
       abi: ELECTION_ABI,
       functionName: 'addVoters',
-      args: [ELECTION_ID, addresses],
-      gas: (estimate * 112n) / 100n,
+      args,
+      gas,
       maxFeePerGas: fee,
       maxPriorityFeePerGas: 0n,
     });
     const receipt = await client.waitForTransactionReceipt({ hash, timeout: 240_000 });
     if (receipt.status !== 'success') throw new Error(`addVoters reverted: ${hash}`);
-    console.log(`    addVoters: ${addresses.length} added, tx ${hash}`);
+    console.log(
+      `    addVoters: ${addresses.length} added (indices ${fresh.map((f) => f.index).join(', ')}), ` +
+        `gas ${receipt.gasUsed}, tx ${hash}`,
+    );
     candidates.push(...fresh);
+    candidates.sort((a, b) => a.index - b.index);
   }
 }
 

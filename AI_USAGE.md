@@ -823,3 +823,52 @@ matches the SPDX headers. No contract or crypto-core changes.
   the submission platform, and are left for me to tick in the checklist.
 - The video, not yet recorded.
 
+---
+
+## 2026-11-27 — Task 13: the invite pool must not run out
+
+**What I asked**
+
+Confirm the keeper adds fresh invites with `addVoters` when unused ones run low.
+If it only rotates through the original 30, make it extend the pool from the
+master mnemonic.
+
+**What it found**
+
+The extension code existed but had never run: every run so far had found 8
+unvoted invites among the 30. Read closely, it would have failed the first time
+it fired, in two ways:
+
+- **`addVoters` would have been refused.** It is an EVM transaction from the
+  relayer, which needs a live authorisation window. Nothing kept the relayer's
+  window open, and on chain it was `live: false`, its last window having
+  expired on 26 Nov.
+- **An off-by-one would have stranded every invite it added.** The scan
+  stopped at the first index not allowlisted (30) but started provisioning at
+  31. Index 30 stayed a permanent gap, and since each later scan stopped at
+  that gap, invites 31+ were never counted again. Each run would have funded a
+  fresh batch while the last one sat unused.
+
+**What the AI generated**
+
+- The scan counts every unvoted, allowlisted invite and stops only after 10
+  consecutive indices that are not allowlisted, so one gap cannot hide the
+  rest. New invites take the lowest free indices, at most 8 per run.
+- Before `addVoters` it ensures the relayer's own EVM window, and the gas
+  limit respects the EIP-7623 calldata floor like every other send.
+- `--min-unvoted N` provisions ahead of demand.
+
+**Verified**
+
+- Ran the path for real with one invite (`--min-unvoted 22`). It funded and
+  registered invite 30, reopened the relayer's expired window, and
+  `addVoters` succeeded: PROOF.md row 71, 52,634 gas, 0.43 QOR in all. The
+  allowlist went 30 → 31 and unvoted 21 → 22, and a second run provisioned
+  nothing.
+- **Recording that row exposed a third bug, one this AI had just introduced.**
+  The *Corrections* table added to PROOF.md in Task 12 cites row numbers, and
+  `recordProof` took any line starting with `| <number> |` as a proof row, so
+  row 71 landed inside the Corrections table. It now reads only the table
+  headed `| # |`. Row 71 was moved into place, and a test write put the next
+  row at 72 in the right table (then removed).
+

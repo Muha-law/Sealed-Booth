@@ -90,7 +90,8 @@ junk undetected.
 **Keeping the demo alive.** A browser cannot open an EVM authorisation window
 on this chain, and a window lasts under 7 hours. A GitHub Actions
 [keeper](.github/workflows/keeper.yml) runs every 4 hours. It reopens windows
-for 8 single-use demo identities, checks the election key against the chain,
+for 8 single-use demo identities, derives and allowlists fresh ones with
+`addVoters` when unvoted ones run low, checks the election key against the chain,
 and publishes `pool.json` into the Pages artifact only, never into git. Design
 in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#the-keeper-keeping-the-demo-votable-on-github-actions).
 

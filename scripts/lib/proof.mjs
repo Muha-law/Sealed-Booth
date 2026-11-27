@@ -75,10 +75,15 @@ function appendRow(row) {
   const md = readFileSync(PATH, 'utf8');
   const lines = md.split(/\r?\n/);
 
-  // Find the proof table and work out the next row number.
+  // Find THE proof table (the one headed `| # |`) and its last row. Only that
+  // table: other tables in the file also start rows with a number (the
+  // Corrections table cites row numbers), and scanning the whole file once
+  // put a new row inside one of them.
+  const header = lines.findIndex((l) => /^\|\s*#\s*\|/.test(l));
+  if (header < 0) throw new Error('could not find the proof table header (| # |) in PROOF.md');
   let lastIndex = -1;
   let n = 0;
-  for (let i = 0; i < lines.length; i++) {
+  for (let i = header + 2; i < lines.length && lines[i].startsWith('|'); i++) {
     const line = lines[i];
     if (line === PLACEHOLDER) {
       lines.splice(i, 1);
@@ -91,6 +96,7 @@ function appendRow(row) {
       lastIndex = i;
     }
   }
+  if (lastIndex < 0) lastIndex = header + 1; // empty table: after the separator
   if (lastIndex < 0) {
     throw new Error('could not find the proof table in PROOF.md');
   }

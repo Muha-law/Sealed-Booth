@@ -274,7 +274,12 @@ every push to `main` and on demand:
 1. reads the demo election from the contract and the relayer's balance;
 2. keeps 8 unvoted, allowlisted invite identities ready: reopens each one's
    EVM window and tops up its balance when needed. Nothing is sent when all is
-   healthy;
+   healthy. **When fewer than 8 unvoted invites remain, it extends the pool**
+   from the master mnemonic: it funds the next HD indices (lowest free index
+   first, at most 8 per run), registers their ML-DSA-87 keys, opens the
+   relayer's own EVM window, and allowlists them with `addVoters`. Up to 200
+   identities can be derived, so supply is bounded by the relayer's QOR, not
+   by the original 30. First run live: PROOF.md row 71;
 3. reads the election key from the creation transaction's **receipt**
    (`BOOTH_DEMO_ELECTION_TX`), never from `eth_getLogs`, which this node caps at
    10,000 blocks, and refuses to publish unless `keccak256(key)` equals the

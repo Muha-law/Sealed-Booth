@@ -55,22 +55,29 @@ https://explore.qore.network.
 
 ## Before judging (6–15 Dec)
 
-- [ ] **Top up the relayer from the faucet before 6 Dec.** It held
-  **18.22 QOR** on 27 Nov. This is an estimate from the keeper logs, not a
-  measurement over days:
+- [x] **Relayer topped up.** It holds **117.79 QOR** (27 Nov, after the first
+  pool extension). At the rates below that lasts well past the 20 Dec close.
+  Watch the keeper's balance line anyway. The rates are an estimate from the
+  keeper logs, not a measurement over days:
   - Each ballot costs the relayer about 0.31 QOR, the top-up of the next
     invite.
   - Keeping 8 idle invites votable costs about 1.3 QOR a day: windows reopen
     about every 7 hours at about 0.045 QOR each, drawn from invite balances that
     the relayer refills.
+  - Each new invite the keeper provisions costs about 0.35 QOR (funding plus
+    its ML-DSA-87 registration). The first extension, one invite plus the
+    relayer's window and `addVoters`, cost 0.43 QOR in all.
   - The keeper stops entirely below a **3 QOR floor**: it exits before
-    reopening any window, the run goes red, and demo voting stops. At the rate
-    above the balance reaches that floor around **8–9 Dec**, during judging.
+    reopening any window, the run goes red, and demo voting stops. At 18.22 QOR
+    that would have been around 8–9 Dec; at 117.79 it is months away.
   - The keeper logs the balance on every run. Watch the Actions tab.
-- [ ] **Invite budget.** 30 identities are allowlisted and 9 have voted, so 21
-  remain. The keeper keeps 8 ready at a time. Each recording take and each
-  `check-site.mjs` run uses one or two. If they run low: provision more
-  identities (fund each and register its ML-DSA-87 key, as
-  `scripts/12-provision-invites.ts` does), allowlist them with `addVoters`
-  (admin-only, any time before the close), then run the keeper.
+- [x] **Invite supply extends itself.** 31 identities are allowlisted and 22 are
+  unvoted. When fewer than 8 unvoted remain, the keeper derives the next ones
+  from the master mnemonic, funds and registers them, and allowlists them with
+  `addVoters`, up to 200. Verified live: PROOF.md row 71. The remaining limit
+  is pace, not supply. Only 8 identities are ready at once, so more than 8
+  votes within one 4-hour keeper cycle shows **The demo pool is refilling**
+  until the next run. To provision ahead before recording, run
+  `node scripts/keeper.mjs --min-unvoted 24`, or trigger the keeper from the
+  Actions tab.
 - [ ] After recording, add the video link (see above).
