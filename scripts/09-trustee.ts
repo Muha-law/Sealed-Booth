@@ -1,7 +1,15 @@
 /**
  * ONE trustee, as its own OS process.
  *
- *   npx tsx scripts/09-trustee.ts <index 0-based> <electionId>
+ *   npx tsx scripts/09-trustee.ts <index 0-based> <electionId> [--creation-tx 0x...] [--dry-run]
+ *
+ * --creation-tx is the transaction that created the election. Every event is
+ * read by scanning from its block in 9,000-block chunks, because this node caps
+ * eth_getLogs at 10,000 blocks and an election is usually weeks old by its
+ * tally. For the demo election it defaults to BOOTH_DEMO_ELECTION_TX.
+ *
+ * --dry-run reads everything, verifies the panel and checks that the scan found
+ * every ballot the contract counted, then stops. It sends no transaction.
  *
  * This process reads exactly one mnemonic — its own. It never sees another
  * trustee's key, which is the point: the earlier live run combined shares in a
@@ -50,15 +58,30 @@ import { recordProof } from './lib/proof.mjs';
 import { SHARE_PURPOSE } from '../src/core/constants.js';
 import { packElectionKey } from '../src/core/electionKey.js';
 import { tallyBallots, type OnChainBallot, type RegistryKeys } from '../src/core/tally.js';
+import { chunkRanges } from '../src/core/logRange.js';
 
 const ME = Number(process.argv[2]);
 const ELECTION_ID = BigInt(process.argv[3] ?? '0');
+const DRY_RUN = process.argv.includes('--dry-run');
+const flag = (name: string) => {
+  const i = process.argv.indexOf(name);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+};
 if (!Number.isInteger(ME) || ME < 0 || ELECTION_ID === 0n) {
-  throw new Error('usage: npx tsx scripts/09-trustee.ts <trusteeIndex> <electionId>');
+  throw new Error(
+    'usage: npx tsx scripts/09-trustee.ts <trusteeIndex> <electionId> [--creation-tx 0x...] [--dry-run]',
+  );
 }
 
 const env = loadEnv();
 const CONTRACT = requireEnv(env, 'ELECTION_CONTRACT_ADDRESS') as Hex;
+const CREATION_TX = (flag('--creation-tx') ??
+  (env.BOOTH_DEMO_ELECTION_ID && BigInt(env.BOOTH_DEMO_ELECTION_ID) === ELECTION_ID
+    ? env.BOOTH_DEMO_ELECTION_TX
+    : undefined)) as Hex | undefined;
+if (!CREATION_TX) {
+  throw new Error(`pass --creation-tx <hash of the transaction that created election ${ELECTION_ID}>`);
+}
 const abi = JSON.parse(readFileSync('out/Election.sol/Election.json', 'utf8')).abi as Abi;
 const log = (m: string) => console.log(`[trustee ${ME + 1}] ${m}`);
 const bytes = (h: string) => Uint8Array.from(Buffer.from(h.slice(2), 'hex'));
@@ -131,6 +154,8 @@ const election = (await read('getElection', [ELECTION_ID])) as {
   trusteeCount: number;
   threshold: number;
   closeAt: bigint;
+  voterCount: number;
+  ballotCount: number;
   electionKeyHash: Hex;
 };
 const options = (await read('getOptions', [ELECTION_ID])) as readonly string[];
@@ -139,9 +164,47 @@ const k = Number(election.threshold);
 log(`election ${ELECTION_ID}: ${k} of ${n} trustees`);
 
 // ---- everything else comes from the chain, all of it public ----
+type ChainLog = Awaited<ReturnType<typeof client.getLogs>>[number];
+
+/** Every log this contract emitted in [from, to], in 9,000-block chunks. */
+async function scanLogs(from: bigint, to: bigint): Promise<ChainLog[]> {
+  const out: ChainLog[] = [];
+  for (const [a, b] of chunkRanges(from, to)) {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        out.push(...(await client.getLogs({ address: CONTRACT, fromBlock: a, toBlock: b })));
+        break;
+      } catch (err) {
+        // A transient RPC error must not silently drop a chunk of ballots.
+        if (attempt >= 4) throw new Error(`getLogs ${a}..${b} failed ${attempt} times: ${String(err)}`);
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+      }
+    }
+  }
+  return out;
+}
+
+// The creation block, from the creation transaction's receipt (no age limit),
+// checked to really be this election on this contract.
+const creation = await client.getTransactionReceipt({ hash: CREATION_TX });
+const createdHere = creation.logs.some((l: ChainLog) => {
+  if (l.address.toLowerCase() !== CONTRACT.toLowerCase()) return false;
+  try {
+    const p = decodeEventLog({ abi, data: l.data, topics: l.topics });
+    return p.eventName === 'ElectionCreated' && (p.args as unknown as { electionId: bigint }).electionId === ELECTION_ID;
+  } catch {
+    return false;
+  }
+});
+if (!createdHere) {
+  throw new Error(`transaction ${CREATION_TX} did not create election ${ELECTION_ID} on ${CONTRACT}`);
+}
+const creationBlock = creation.blockNumber as bigint;
+
 const head = await client.getBlockNumber();
-const fromBlock = head > 9_000n ? head - 9_000n : 0n;
-const logs = await client.getLogs({ address: CONTRACT, fromBlock, toBlock: 'latest' });
+const logs = await scanLogs(creationBlock, head);
+log(`scanned blocks ${creationBlock}..${head} (${chunkRanges(creationBlock, head).length} chunk(s)), ${logs.length} log(s)`);
+const releaseLogs0: ChainLog[] = [];
 
 let trusteeAddresses: Hex[] = [];
 let keyRefs: Hex[] = [];
@@ -174,10 +237,39 @@ for (const l of logs) {
     });
   } else if (parsed.eventName === 'VoterAllowed') {
     roll.add((a.voter as string).toLowerCase());
+  } else if (parsed.eventName === 'ShareReleased') {
+    releaseLogs0.push(l);
   }
 }
 if (trusteeAddresses.length !== n) throw new Error('could not read the panel from the chain');
 log(`read the panel and ${ballots.length} ballots from the event log`);
+
+// Completeness: the scan must have found exactly the ballots the contract
+// counted, ids 1..N, each matching the hash in storage. A tally over a partial
+// set would be wrong yet look final, so this is checked on every run.
+{
+  const expected = Number(election.ballotCount);
+  const ids = ballots.map((b) => b.ballotId).sort((x, y) => (x < y ? -1 : x > y ? 1 : 0));
+  const contiguous = ids.every((id, i) => id === BigInt(i + 1));
+  if (ballots.length !== expected || !contiguous) {
+    throw new Error(
+      `scan found ${ballots.length} ballot(s) [${ids.join(',')}] but the contract counts ${expected}; refusing to tally`,
+    );
+  }
+  for (const b of ballots) {
+    const stored = (await read('ballotHash', [ELECTION_ID, b.ballotId])) as Hex;
+    if (stored.toLowerCase() !== keccak256(b.ciphertext).toLowerCase()) {
+      throw new Error(`ballot ${b.ballotId}: event ciphertext does not match the hash in storage`);
+    }
+  }
+  if (roll.size !== Number(election.voterCount)) {
+    throw new Error(`scan found ${roll.size} allowlisted voter(s) but the contract counts ${election.voterCount}`);
+  }
+  log(
+    `complete: all ${expected} ballot(s) found, ids 1..${expected}, each matches storage; ` +
+      `roll ${roll.size}/${election.voterCount}; ${sealedByIndex.size} sealed share(s)`,
+  );
+}
 
 /**
  * The panel's recipients, each resolved from the on-chain KEM registry and
@@ -211,6 +303,12 @@ for (let i = 0; i < n; i++) {
   );
 }
 log(`verified ${panel.length} recipient keys against the registry and the on-chain refs`);
+
+if (DRY_RUN) {
+  const isOpenNow = (await read('isOpen', [ELECTION_ID])) as boolean;
+  log(`dry run: election ${isOpenNow ? 'still open' : 'closed'}; stopping before any transaction`);
+  process.exit(0);
+}
 
 await ensureWindow(myUnified, { txs: 4, gasEach: 700_000, blocks: 17_280 });
 
@@ -265,13 +363,18 @@ if (alreadyReleased) {
 log(`waiting for ${k} released shares...`);
 const collected = new Map<number, Uint8Array>();
 
+// Releases already in the full scan first, then only blocks not yet scanned,
+// so a share released long before this process started is still found.
+let scannedTo = head;
 for (let attempt = 0; attempt < 60; attempt++) {
-  const since = await client.getBlockNumber();
-  const releaseLogs = await client.getLogs({
-    address: CONTRACT,
-    fromBlock: since > 9_000n ? since - 9_000n : 0n,
-    toBlock: 'latest',
-  });
+  let releaseLogs: ChainLog[];
+  if (attempt === 0) {
+    releaseLogs = releaseLogs0;
+  } else {
+    const now = await client.getBlockNumber();
+    releaseLogs = now > scannedTo ? await scanLogs(scannedTo + 1n, now) : [];
+    if (now > scannedTo) scannedTo = now;
+  }
 
   for (const l of releaseLogs) {
     let parsed;

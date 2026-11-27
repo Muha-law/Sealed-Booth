@@ -27,6 +27,7 @@ import {
   type Pool,
 } from './chain.ts';
 import { castBallot } from '../src/core/ballot.ts';
+import { verifyInclusion } from '../src/core/inclusion.ts';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -246,11 +247,17 @@ registerScreen({
           );
         }
 
-        // Read the receipt back from the contract, not from our own memory.
-        const after = await read<ElectionData>(pool.contract, 'getElection', [electionId]);
-        const ballotId = BigInt(after.ballotCount);
-        const storedHash = await read<Hex>(pool.contract, 'ballotHash', [electionId, ballotId]);
-        const included = storedHash.toLowerCase() === sealed.envelopeHash.toLowerCase();
+        // The ballot id comes from THIS transaction's BallotCast event, never
+        // from "the newest ballot": someone else may have voted in between.
+        // Then contract storage must hold our ciphertext hash under that id.
+        const { ballotId, storedHash, included } = await verifyInclusion({
+          receipt,
+          contract: pool.contract,
+          electionId,
+          voter: invite.address,
+          envelopeHash: sealed.envelopeHash,
+          readBallotHash: (id, ballot) => read<Hex>(pool.contract, 'ballotHash', [id, ballot]),
+        });
 
         form.remove();
         mount.append(

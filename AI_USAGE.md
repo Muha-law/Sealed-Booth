@@ -613,3 +613,43 @@ keeper survives on its own schedule.
 **Could not verify**
 
 - Whether the retry is enough if GitHub's lag lasts longer than 30 s.
+
+## 2026-11-27 — Task 11: every historical read made age-proof
+
+**What I asked**
+
+Grep for every log read and say whether it survives an election weeks old. Then
+fix the inclusion check and the trustee's event scan, test both, and re-verify
+the live site.
+
+**What the AI generated**
+
+- **Inclusion check** (`src/core/inclusion.ts`, used by `web/vote.ts`). The
+  ballot id now comes from the BallotCast event in the voter's own castBallot
+  receipt. Storage must then hold the same ciphertext hash under that id.
+  Before, the check took `ballotCount` as "my" ballot, so a vote landing in
+  between would show a real ballot as FAILED. `test/inclusion.test.ts` covers
+  exactly that case, using real ABI encodings of the event. It also covers
+  events from another contract, election or voter, and a receipt with no event
+  for this voter, which is refused.
+- **Trustee scan** (`scripts/09-trustee.ts`). It now reads events from the
+  election's creation block in 9,000-block chunks (`src/core/logRange.ts`,
+  tested). The creation block comes from the creation receipt, checked to be
+  this election on this contract. Release polling scans only new blocks. Every
+  run now checks that the scan found exactly `ballotCount` ballots, ids 1..N,
+  each matching `ballotHash` in storage, and refuses to tally otherwise.
+  `--dry-run` stops before any transaction.
+
+**Verified**
+
+- Dry tally of demo election 2 (trustee 1): it scanned blocks
+  10,808,777..10,833,770 in 3 chunks. All 7 ballots were found and each
+  matched storage, with the roll at 30/30 and 3 sealed shares. The old
+  last-9,000-blocks window saw only 2 of the 7 ballots and no creation event.
+
+**Could not verify**
+
+- A full decrypting tally of election 2. The contract refuses `releaseShare`
+  until it closes on 20 Dec, and recombining shares in one process would
+  defeat the trustee separation, so the dry run stops after the scan. The
+  three-process tally itself is already proven on election 3.
