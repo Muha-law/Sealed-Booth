@@ -50,6 +50,16 @@ registerScreen({
   label: 'Q-Day',
 
   async render({ mount }: ScreenContext) {
+    await renderQday(mount);
+  },
+});
+
+/**
+ * Draws the screen from scratch. Reset calls this again, which seals twenty
+ * brand-new ballots with fresh keys: a replay is a real second run, not a
+ * rewind of the first.
+ */
+async function renderQday(mount: HTMLElement) {
     mount.innerHTML = '';
 
     mount.append(
@@ -77,6 +87,12 @@ registerScreen({
     document.getElementById('qday-building')?.remove();
 
     const button = el('button', { type: 'button' }, 'Fast-forward to 2040');
+    const reset = el('button', { type: 'button', className: 'secondary', hidden: true }, 'Reset');
+    reset.addEventListener('click', () => {
+      reset.disabled = true;
+      void renderQday(mount);
+    });
+    const actions = el('div', { className: 'actions' }, button, reset);
     const verdict = el('p', { className: 'muted' });
 
     const grid = el('div', { className: 'qday-grid' });
@@ -106,7 +122,7 @@ registerScreen({
     });
 
     grid.append(left, right);
-    mount.append(button, verdict, grid);
+    mount.append(actions, verdict, grid);
 
     button.addEventListener('click', async () => {
       button.disabled = true;
@@ -157,7 +173,8 @@ registerScreen({
         await wait(70); // cascade, for the camera
       }
 
-      verdict.className = held === sim.ballots.length ? 'ok' : 'error';
+      // Neutral, not green: half of this line is ten voters losing their secrecy.
+      verdict.className = held === sim.ballots.length ? 'verdict' : 'error';
       verdict.textContent =
         `${broken} of ${sim.ballots.length} ballots on the left are now public, with names attached. ` +
         `${held} of ${sim.ballots.length} on the right are still sealed.`;
@@ -194,6 +211,6 @@ registerScreen({
           ),
         ),
       );
+      reset.hidden = false;
     });
-  },
-});
+}

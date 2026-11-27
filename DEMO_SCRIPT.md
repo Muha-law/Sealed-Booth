@@ -53,8 +53,9 @@ count is in brackets. Labels in **bold** are exactly what appears on screen.
 > separate processes, each holding one key. The contract published a result only
 > when two submitted identical totals.
 
-**0:55 · DO:** click **Vote** in the top nav. Point at **You are voting as a demo
-identity**. Pick an option. Click **Seal and cast my ballot**.
+**0:55 · DO:** scroll back up and click **Try voting**. Point at **Voting as
+public demo identity #N**. Pick an option. Click **Seal and cast my ballot**, and
+let the five progress steps tick green on camera.
 
 **SAY** [30 words, while it seals and sends; then let the wait run silent]
 > No wallet needed: a demo identity, public by design, good for one ballot.
@@ -70,8 +71,8 @@ identity**. Pick an option. Click **Seal and cast my ballot**.
 > stored hash for that id matches what I sealed. My ballot is on chain, exactly
 > as I sealed it.
 
-**1:28 · DO:** reload the page, click **Vote** again. Point at the **Demo voter #**
-number, which is different.
+**1:28 · DO:** reload the page, click **Vote** again. Point at the **demo
+identity #** number, which is different.
 
 **SAY** [23 words]
 > Again, and it offers a different identity, because that one has voted. One

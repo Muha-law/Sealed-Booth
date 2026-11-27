@@ -51,6 +51,51 @@ async function launch() {
 
 const browser = await launch();
 
+/**
+ * WCAG contrast of every element matching `selector`: its text colour against
+ * the first opaque background found walking up the tree. Runs in the page, on
+ * the computed styles the browser actually painted with.
+ */
+async function contrastOf(page, selector) {
+  return page.evaluate((sel) => {
+    const parse = (c) => {
+      const m = c.match(/rgba?\(([^)]+)\)/);
+      if (!m) return null;
+      const [r, g, b, a = '1'] = m[1].split(/[ ,\/]+/).filter(Boolean);
+      return { r: +r, g: +g, b: +b, a: +a };
+    };
+    const lum = ({ r, g, b }) => {
+      const f = (v) => {
+        v /= 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const bgOf = (el) => {
+      for (let n = el; n; n = n.parentElement) {
+        const c = parse(getComputedStyle(n).backgroundColor);
+        if (c && c.a > 0.5) return c;
+      }
+      return { r: 255, g: 255, b: 255, a: 1 };
+    };
+    return [...document.querySelectorAll(sel)]
+      .filter((el) => el.offsetParent !== null && !el.disabled)
+      .map((el) => {
+        const fg = parse(getComputedStyle(el).color);
+        const bg = bgOf(el);
+        const [hi, lo] = [lum(fg), lum(bg)].sort((x, y) => y - x);
+        return { text: el.textContent.trim().slice(0, 40), ratio: (hi + 0.05) / (lo + 0.05) };
+      });
+  }, selector);
+}
+
+function judgeContrast(where, items, what) {
+  if (items.length === 0) return note('warn', where, `no visible ${what} to measure`);
+  const worst = items.reduce((a, b) => (b.ratio < a.ratio ? b : a));
+  const level = worst.ratio >= 4.5 ? 'ok' : 'fail';
+  note(level, where, `${what}: lowest contrast ${worst.ratio.toFixed(2)}:1 ("${worst.text}") of ${items.length}, AA needs 4.5`);
+}
+
 for (const vp of VIEWPORTS) {
   console.log(`\n================ ${vp.name} (${vp.width}x${vp.height}) ================`);
   const context = await browser.newContext({
@@ -119,6 +164,19 @@ for (const vp of VIEWPORTS) {
     if (bad === 0) note('ok', 'results', `${hrefs.length} explorer link(s), sampled ones all resolve`);
     else note('fail', 'results', `${bad} explorer link(s) did not resolve`);
   }
+  if (await page.locator('#screen a.button', { hasText: 'Try voting' }).first().isVisible()) {
+    note('ok', 'results', 'intro with a "Try voting" button');
+  } else note('fail', 'results', 'no "Try voting" button');
+  if (/Proof election \((open|closed)\)/.test(body) && /Live demo election \((open|closed)\)/.test(body)) {
+    note('ok', 'results', 'headings without election numbers');
+  } else note('fail', 'results', 'headings not in the "Proof election (closed)" form');
+  if (await page.locator('#screen .panel a.button', { hasText: /^Vote$/ }).count()) {
+    note('ok', 'results', 'Vote button inside the live demo card');
+  } else note('warn', 'results', 'no Vote button in the live demo card');
+  judgeContrast('results', await contrastOf(page, '#screen .button, #screen button'), 'primary buttons');
+  judgeContrast('results', await contrastOf(page, '#screen .warn'), 'warning text');
+  if (await page.locator('header a.repo-link').isVisible()) note('ok', 'shell', '"Source and proof" link in the header');
+  else note('fail', 'shell', 'no "Source and proof" link');
   console.log(`  screenshot: ${await shot('1-results')}`);
 
   // ------------------------------------------------------------- 2. Vote
@@ -134,6 +192,14 @@ for (const vp of VIEWPORTS) {
     console.log(`  screenshot: ${await shot('2-vote-broken')}`);
   } else {
     note('ok', 'vote', 'a demo identity was offered, and labelled as one');
+    if (await page.locator('.identity summary', { hasText: 'Why?' }).isVisible()) {
+      note('ok', 'vote', 'demo identity on one line with a "Why?" toggle');
+    } else note('fail', 'vote', 'no "Why?" toggle on the demo identity');
+    const firstChoice = await page.locator('.choice').first().boundingBox();
+    if (firstChoice && firstChoice.y + firstChoice.height <= vp.height) {
+      note('ok', 'vote', `choices above the fold (first choice ends at ${Math.round(firstChoice.y + firstChoice.height)}px of ${vp.height})`);
+    } else note('fail', 'vote', 'first choice is below the fold');
+    judgeContrast('vote', await contrastOf(page, 'button[type=submit]'), 'cast button');
     console.log(`  screenshot: ${await shot('2-vote-ready')}`);
 
     const choices = await page.locator('.choice').count();
@@ -169,6 +235,13 @@ for (const vp of VIEWPORTS) {
     } else {
       note('warn', 'vote', 'no inclusion check line found');
     }
+    const doneSteps = await page.locator('.progress li.done').count();
+    if (doneSteps === 5) note('ok', 'vote', 'all 5 progress steps ticked');
+    else note('fail', 'vote', `${doneSteps} of 5 progress steps ticked`);
+    const tech = page.locator('details.tech');
+    if ((await tech.count()) && !(await tech.evaluate((d) => d.open)) && !/Gas limit/.test(await page.locator('#screen').innerText())) {
+      note('ok', 'vote', 'gas line tucked into a collapsed "Technical details"');
+    } else note('fail', 'vote', 'gas line not inside a collapsed "Technical details"');
     console.log(`  screenshot: ${await shot('3-vote-receipt')}`);
 
     // ------------------------------------------- 3. a second vote attempt
@@ -203,6 +276,8 @@ for (const vp of VIEWPORTS) {
   const rowsBefore = await page.locator('.qday-row').count();
   if (rowsBefore !== 20) note('fail', 'qday', `expected 20 ballot rows, found ${rowsBefore}`);
   else note('ok', 'qday', '20 rows: ten ballots, sealed two ways');
+  judgeContrast('qday', await contrastOf(page, '.sim-badge'), 'SIMULATION badge');
+  judgeContrast('qday', await contrastOf(page, '#screen button'), 'Fast-forward button');
   console.log(`  screenshot: ${await shot('5-qday-before')}`);
 
   const button = page.locator('button', { hasText: 'Fast-forward to 2040' });
@@ -231,7 +306,26 @@ for (const vp of VIEWPORTS) {
     } else {
       note('warn', 'qday', 'no QoreSeal error code shown');
     }
+    const verdictClass = await page.locator('#screen .actions + p').getAttribute('class');
+    if (verdictClass === 'verdict') note('ok', 'qday', 'result line is neutral, not green');
+    else note('fail', 'qday', `result line class is "${verdictClass}"`);
+    judgeContrast('qday', await contrastOf(page, '#screen .warn'), 'warning text');
     console.log(`  screenshot: ${await shot('6-qday-after')}`);
+
+    const reset = page.locator('#screen button', { hasText: 'Reset' });
+    if (!(await reset.isVisible())) {
+      note('fail', 'qday', 'no Reset button after the run');
+    } else {
+      await reset.click();
+      await page.waitForTimeout(2500);
+      const sealedAgain = await page.locator('.qday-row.sealed').count();
+      const brokenAgain = await page.locator('.qday-row.broken').count();
+      const ffEnabled = await page.locator('button', { hasText: 'Fast-forward to 2040' }).isEnabled();
+      if (sealedAgain === 20 && brokenAgain === 0 && ffEnabled) {
+        note('ok', 'qday', 'Reset restores 20 sealed ballots and re-arms the run, no reload');
+      } else note('fail', 'qday', `after Reset: ${sealedAgain} sealed, ${brokenAgain} broken, fast-forward ${ffEnabled ? 'on' : 'off'}`);
+      console.log(`  screenshot: ${await shot('7-qday-reset')}`);
+    }
   }
 
   // ------------------------------------------------- 5. console + requests
@@ -245,6 +339,31 @@ for (const vp of VIEWPORTS) {
   if (realFailed.length === 0) note('ok', 'network', 'no failed requests');
   else for (const r of realFailed.slice(0, 6)) note('fail', 'network', r.slice(0, 220));
 
+  await context.close();
+}
+
+// ------------------------------------- dark mode: contrast only, no casting
+{
+  console.log(`\n================ dark mode (1440x900, contrast only, casts nothing) ================`);
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark', deviceScaleFactor: 2 });
+  const page = await context.newPage();
+  const shot = async (name) => {
+    const file = join(SHOTS, `dark-${name}.png`);
+    await page.screenshot({ path: file, fullPage: true });
+    return file;
+  };
+  await page.goto(URL_UNDER_TEST, { waitUntil: 'networkidle', timeout: 60_000 });
+  await page.waitForTimeout(2500);
+  judgeContrast('dark', await contrastOf(page, '#screen .button, #screen button, #screen .warn'), 'Results buttons and warnings');
+  console.log(`  screenshot: ${await shot('1-results')}`);
+  await page.locator('#nav a', { hasText: 'Vote' }).click();
+  await page.waitForTimeout(3000);
+  judgeContrast('dark', await contrastOf(page, 'button[type=submit]'), 'cast button');
+  console.log(`  screenshot: ${await shot('2-vote-ready')}`);
+  await page.locator('#nav a', { hasText: 'Q-Day' }).click();
+  await page.waitForTimeout(2500);
+  judgeContrast('dark', await contrastOf(page, '.sim-badge, #screen button'), 'SIMULATION badge and button');
+  console.log(`  screenshot: ${await shot('5-qday-before')}`);
   await context.close();
 }
 

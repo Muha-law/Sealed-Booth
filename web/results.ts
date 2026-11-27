@@ -73,9 +73,40 @@ registerScreen({
       'resultStatus',
       [electionId],
     );
+    const proofOpen = await read<boolean>(contract, 'isOpen', [electionId]);
+
+    // What Booth is, before any numbers. A judge lands here first.
+    mount.append(
+      el(
+        'div',
+        { className: 'intro' },
+        el(
+          'p',
+          {},
+          'Booth is a secret ballot on QoreChain. Each vote is sealed in the voter’s ' +
+            'own browser with ML-KEM-1024 and signed with ML-DSA-87, so the ciphertext ' +
+            'on chain stays unreadable even after a quantum computer arrives.',
+        ),
+        el(
+          'p',
+          {},
+          'Ballots can only be opened after voting closes, and only by k of n ' +
+            'trustees together. Below is a finished election; you can cast a real ' +
+            'sealed ballot in the live one.',
+        ),
+        el('a', { className: 'button', href: '#/vote' }, 'Try voting'),
+      ),
+    );
 
     mount.append(
-      el('h2', {}, `Election ${electionId}: ${election.question}`),
+      el('h2', {}, `Proof election (${proofOpen ? 'open' : 'closed'})`),
+      el(
+        'p',
+        { className: 'ids' },
+        `Election ${electionId} on contract `,
+        el('code', {}, contract),
+      ),
+      el('p', {}, election.question),
       el(
         'p',
         { className: 'muted' },
@@ -194,12 +225,17 @@ registerScreen({
         el(
           'div',
           { className: 'panel' },
-          el('h3', {}, 'Live demo election'),
+          el('h3', {}, `Live demo election (${openNow ? 'open' : 'closed'})`),
+          el(
+            'p',
+            { className: 'ids' },
+            `Election ${demoId} on contract `,
+            el('code', {}, pool.contract),
+          ),
           el(
             'p',
             {},
-            `Election ${demoId} is ${openNow ? 'open' : 'closed'}`,
-            openNow ? `, closing in ${until(demo.closeAt)}. ` : '. ',
+            openNow ? `Closes in ${until(demo.closeAt)}. ` : 'Voting has closed. ',
             `${demo.ballotCount} ballots cast so far from ${demo.voterCount} allowlisted voters.`,
           ),
           el(
@@ -209,6 +245,7 @@ registerScreen({
               ? `${usable.length} demo identities are ready — use the Vote screen to cast a real sealed ballot.`
               : 'No demo identity currently has a live authorisation window. The keeper refreshes them every four hours.',
           ),
+          ...(openNow ? [el('a', { className: 'button', href: '#/vote' }, 'Vote')] : []),
         ),
       );
     }

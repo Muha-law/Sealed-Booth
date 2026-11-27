@@ -9,7 +9,7 @@
 1. **Open the site.** It lands on **Results**: the proof election (#3), tallied
    by three separate trustee processes, with its final result and explorer
    links to the key transactions behind it.
-2. **Click Vote**, pick an option, press **Seal and cast my ballot**. Your
+2. **Click Try voting**, pick an option, press **Seal and cast my ballot**. Your
    choice is sealed with ML-KEM-1024 and signed with ML-DSA-87 in your own tab,
    then sent from a pre-provisioned demo identity. The receipt shows
    **Ballot #N — inclusion check passed**, read back from contract storage,
